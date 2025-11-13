@@ -1,0 +1,26 @@
+[project]
+name = "dataxformer"
+version = "0.1.0"
+description = "Implementation of the DataXFormer architecture (LSDI Project, TU Berlin)"
+readme = "README.md"
+requires-python = ">=3.10"
+
+# Main runtime dependencies
+dependencies = [
+    "pandas",
+    "numpy",
+    "torch",
+    "matplotlib",
+    "nltk",                 # Tokenization, stemming, ngrams
+    "tabulate",             # Pretty-printing tables
+]
+
+# Development and research tool
+[tool.uv]
+dev-dependencies = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "black",
+    "ipykernel",
+]
