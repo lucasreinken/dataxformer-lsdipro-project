@@ -13,6 +13,8 @@ dependencies = [
     "matplotlib",
     "nltk",                 # Tokenization, stemming, ngrams
     "tabulate",             # Pretty-printing tables
+    "vertica-python",    # required for DB connection
+    "python-dotenv",     # required to load .env file
 ]
 
 # Development and research tool

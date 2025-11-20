@@ -455,8 +455,10 @@ dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pandas" },
+    { name = "python-dotenv" },
     { name = "tabulate" },
     { name = "torch" },
+    { name = "vertica-python" },
 ]
 
 [package.dev-dependencies]
@@ -474,8 +476,10 @@ requires-dist = [
     { name = "nltk" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "python-dotenv" },
     { name = "tabulate" },
     { name = "torch" },
+    { name = "vertica-python" },
 ]
 
 [package.metadata.requires-dev]
@@ -1756,6 +1760,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-dotenv"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/26/19cadc79a718c5edbec86fd4919a6b6d3f681039a2f6d66d14be94e75fb9/python_dotenv-1.2.1.tar.gz", hash = "sha256:42667e897e16ab0d66954af0e60a9caa94f0fd4ecf3aaf6d2d260eec1aa36ad6", size = 44221, upload-time = "2025-10-26T15:12:10.434Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/14/1b/a298b06749107c305e1fe0f814c6c74aea7b2f1e10989cb30f544a1b3253/python_dotenv-1.2.1-py3-none-any.whl", hash = "sha256:b81ee9561e9ca4004139c6cbba3a238c32b03e4894671e181b671e8cb8425d61", size = 21230, upload-time = "2025-10-26T15:12:09.109Z" },
+]
+
+[[package]]
 name = "pytokens"
 version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2212,6 +2225,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/95/32/1a225d6164441be760d75c2c42e2780dc0873fe382da3e98a2e1e48361e5/tzdata-2025.2.tar.gz", hash = "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9", size = 196380, upload-time = "2025-03-23T13:54:43.652Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5c/23/c7abc0ca0a1526a0774eca151daeb8de62ec457e77262b66b359c3c7679e/tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8", size = 347839, upload-time = "2025-03-23T13:54:41.845Z" },
+]
+
+[[package]]
+name = "vertica-python"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/29/25/a86f25e00bfeccf0cf22ac9a727d055d061d49e757dabadc37710f9b567c/vertica-python-1.4.0.tar.gz", hash = "sha256:542078ae2fedee694adedb04d81c6edc277b87ed7440302942107d86a0bcd445", size = 110416, upload-time = "2024-07-22T07:02:34.22Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/96/7e/adc6a46263a48e0270b0bc6ddab60c6a70766103f37ec4591ef78f0221db/vertica_python-1.4.0-py3-none-any.whl", hash = "sha256:50fecd7687f4b0b9f6dee6e2b35c195af2a4f702ece01bd12e080b51756e000b", size = 191824, upload-time = "2024-07-22T07:02:32.184Z" },
 ]
 
 [[package]]
