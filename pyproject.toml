@@ -13,6 +13,7 @@ dependencies = [
     "matplotlib",
     "nltk",                 # Tokenization, stemming, ngrams
     "tabulate",             # Pretty-printing tables
+    "orjson",
 ]
 
 # Development and research tool

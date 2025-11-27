@@ -1,0 +1,225 @@
+import nltk
+nltk.download('punkt')
+nltk.download('punkt_tab')
+from nltk.tokenize import word_tokenize
+import string
+from functools import cache
+from nltk.stem import PorterStemmer
+
+from pathlib import Path
+import gzip
+import orjson
+from typing import Iterable, Iterator
+
+# TODO: Implement tests for everything
+
+# TODO: download stopwords from nltk?
+
+# BREAK IT DOWN INTO TOKENIZER CLASS AND OTHER FUNCTIONS (LIKE CREATE_PROJECTIONS)?
+
+class WebTableIndexer:
+    def __init__(self, config):
+        # Known stemmers
+        stemmer_map = {
+            "porter": PorterStemmer,
+        }
+
+        # Validate + construct the stemmer
+        if config.stemmer not in stemmer_map:
+            raise ValueError(
+                f"Unknown stemmer '{config.stemmer}'. "
+                f"Available options: {list(stemmer_map.keys())}"
+            )
+
+        self.stemmer = stemmer_map[config.stemmer]()
+
+        # Stem stopwords if present
+        # TODO: Stem here?
+        if config.stop_words:
+            self.stopwords = [self.stem(stop_word) for stop_word in config.stop_words]
+        else:
+            self.stopwords = []
+
+        self.min_word_len = config.min_word_len
+        # self.batch_size = config.batch_size
+
+        self.read_path = Path(config.read_path)
+
+    # TODO: where is cache really useful?
+    @cache
+    def tokenize(self, text:str) -> str:
+        # TODO: Docstring
+
+        if not text or not text.strip():
+            return None
+    
+        words = self.process_words(text)
+
+        stemmed_words = [
+            stemmed_word
+            for word in words
+            if (stemmed_word := self.stem(word)) not in self.stopwords
+            and len(stemmed_word) >= self.min_word_len
+        ]
+
+        if not stemmed_words: 
+            return None
+        joined_words = " ".join(stemmed_words) 
+        return joined_words
+
+    # TODO: make it configurable how to cache
+    @cache
+    def process_words(self, text:str)->list: 
+        """
+        Processes the input text into a lowercase, punctuation free and tokenized list of strings. 
+
+        In: 
+            text: str
+
+        Out: 
+            words: list(str)
+        """
+        # TODO: make it configurable (config.py)
+        # MAYBE PUT IT INTO TOKENIZE AND MAKE IT RETURN NONE IF NO WORDS (INSTEAD OF .STRIP())
+        words = text.lower().translate(str.maketrans("", "", string.punctuation))
+        processed_words = word_tokenize(words)
+        return processed_words
+
+    @cache
+    def stem(self, word:str):
+        """
+        Returns the stemmed version of the input word. 
+
+        In: 
+            Word: str
+        
+        Out: 
+            The stemmed version of the word: str
+        """
+        stemmed_word = self.stemmer.stem(word)
+        return stemmed_word
+    
+    def _iter_file(self, path: Path) -> Iterator[dict]:
+        # TODO: Docstring (just for line-delimited JSON)
+        opener = gzip.open if path.suffix == ".gz" else open
+
+        with opener(path, "rb") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                yield orjson.loads(line)
+
+    def iter_webtables(self) -> Iterator[dict]:
+        # TODO: Docstring (just for line-delimited JSON)
+
+        if self.read_path.is_file():
+            if self.read_path.suffix in {".json", ".jsonl", ".ndjson", ".gz"}:
+                yield from self._iter_file(self.read_path)
+
+        else:
+            file_iter = sorted(self.read_path.glob("*"))
+
+            for path in file_iter:
+                if path.is_file() and path.suffix in {".json", ".jsonl", ".ndjson", ".gz"}:
+                    yield from self._iter_file(path)
+    
+
+    # TODO: Somehow batch the calls to the database
+
+    # TODO: Config if None values should be stored
+
+    def create_dicts(
+        self,
+    ) -> tuple[
+        dict[tuple[int, int, int], tuple[str, str]],
+        dict[int, tuple[str, str, float]],
+        dict[tuple[int, int], str | None],
+    ]:
+        # TODO: Docstring
+
+        cells_dict: dict[tuple[int, int, int], tuple[str, str]] = {}
+        columns_dict: dict[tuple[int, int], str] = {}
+        tables_dict: dict[int, tuple[str, str, float]] = {}
+
+        for table_index, web_table in enumerate(self.iter_webtables(), 1):
+
+            table_url = web_table["url"]
+            table_title = web_table["title"]
+            # TODO: Add this to the config file
+            table_initial_weight = 0.5
+            header_index = 0
+
+            tables_dict[table_index] = (table_url, table_title, table_initial_weight)
+
+            if web_table["hasHeader"]:
+                # TODO: how to deal with MIXED!, FIRST_COLUMN!, NONE!
+                if ((web_table.get("headerPosition") or "").strip().strip(string.punctuation).lower()) == "first_row":
+                    header_index = 1
+                else:
+                    print(f"Unknown headerPosition: {web_table["headerPosition"]}!")
+
+            table_data = web_table["relation"]
+            for column_index, column in enumerate(table_data, 1):
+                for row_index, term in enumerate(column, 1):
+
+                    if row_index == header_index:
+                        if term:
+                            columns_dict[(table_index, column_index)] = term
+                        else:
+                            columns_dict[(table_index, column_index)] = None
+                        continue
+                    elif row_index == 1 and header_index == 0:
+                        columns_dict[(table_index, column_index)] = None
+
+                    term_tokenized = self.tokenize(term)
+
+                    row_index = row_index - header_index
+                    cells_dict[(table_index, column_index, row_index)] = (term, term_tokenized)
+
+        return cells_dict, tables_dict, columns_dict
+
+    def create_projections(self, dfs) -> dict[str, list[tuple[int, int, int]]]:
+        # TODO: Docstring
+
+        # Isn't the actual term also needed and we can easily do the projection in vertica???
+
+        # TODO: Trie Indexing for Fuzzy Matching
+
+        projections: dict[str, list[tuple[int, int, int]]] = {}
+
+        for table_index, table_data in enumerate(dfs["tableData"]):
+            for row_index, row in enumerate(table_data):
+                for cell_index, cell in enumerate(row):
+                    token = self.tokenize(cell.get("text") )
+                    if token:
+                        projections.setdefault(token, []).append(
+                            (table_index, row_index, cell_index)
+                        )
+
+        return projections
+
+
+def indexing(tokenized_value:list, projections:dict, key_id:int = None)->dict:
+    """
+    Return a dict of all the Examples found in the projections
+    In: 
+        Cleaned_Values: A List of all the Stemped Versions of one Example given
+        Projections: A Dict of Projections of all given Tables
+    Out: 
+        Index_Dict: A dict of all the positions where the Example was found
+                    Form: Key: (Table_ID, Row_ID) -> Value: (Col_ID)
+    """ 
+    key_id = key_id+1
+    index_dict = dict() 
+    
+    value_index = projections.get(tokenized_value, None)
+
+    if value_index: 
+        for table_id, row_id, col_id in value_index: 
+
+            if key_id: 
+                index_dict.setdefault((table_id, row_id), set()).add((key_id-1, col_id))
+            else: 
+                index_dict.setdefault((table_id, row_id), set()).add((col_id))
+    
+    return index_dict
