@@ -14,6 +14,8 @@ dependencies = [
     "nltk",                 # Tokenization, stemming, ngrams
     "tabulate",             # Pretty-printing tables
     "orjson",
+    "vertica_python",
+    "dotenv"
 ]
 
 # Development and research tool

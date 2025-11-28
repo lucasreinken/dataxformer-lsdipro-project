@@ -27,8 +27,8 @@ class WebTableIndexer:
         # Validate + construct the stemmer
         if config.stemmer not in stemmer_map:
             raise ValueError(
-                f"Unknown stemmer '{config.stemmer}'. "
-                f"Available options: {list(stemmer_map.keys())}"
+                f'Unknown stemmer: {config.stemmer}.'
+                f'Available options: {list(stemmer_map.keys())}'
             )
 
         self.stemmer = stemmer_map[config.stemmer]()
@@ -128,6 +128,10 @@ class WebTableIndexer:
 
     # TODO: Config if None values should be stored
 
+    # TODO: Also add the tokenized header (like db from prof)
+
+    # TODO: Also add something tokenized with tables???
+
     def create_dicts(
         self,
     ) -> tuple[
@@ -156,7 +160,7 @@ class WebTableIndexer:
                 if ((web_table.get("headerPosition") or "").strip().strip(string.punctuation).lower()) == "first_row":
                     header_index = 1
                 else:
-                    print(f"Unknown headerPosition: {web_table["headerPosition"]}!")
+                    print(f'Unknown headerPosition: {web_table["headerPosition"]}!')
 
             table_data = web_table["relation"]
             for column_index, column in enumerate(table_data, 1):
@@ -197,29 +201,3 @@ class WebTableIndexer:
                         )
 
         return projections
-
-
-def indexing(tokenized_value:list, projections:dict, key_id:int = None)->dict:
-    """
-    Return a dict of all the Examples found in the projections
-    In: 
-        Cleaned_Values: A List of all the Stemped Versions of one Example given
-        Projections: A Dict of Projections of all given Tables
-    Out: 
-        Index_Dict: A dict of all the positions where the Example was found
-                    Form: Key: (Table_ID, Row_ID) -> Value: (Col_ID)
-    """ 
-    key_id = key_id+1
-    index_dict = dict() 
-    
-    value_index = projections.get(tokenized_value, None)
-
-    if value_index: 
-        for table_id, row_id, col_id in value_index: 
-
-            if key_id: 
-                index_dict.setdefault((table_id, row_id), set()).add((key_id-1, col_id))
-            else: 
-                index_dict.setdefault((table_id, row_id), set()).add((col_id))
-    
-    return index_dict

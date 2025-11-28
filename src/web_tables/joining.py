@@ -20,7 +20,7 @@ def find_direct_tables(Examples:set,
     
 
     if tau > E: 
-        raise ValueError(f"At least Tau: {tau} examples must be given!")
+        raise ValueError(f'At least Tau: {tau} examples must be given!')
     
 
     for Example in Examples: 
@@ -29,7 +29,7 @@ def find_direct_tables(Examples:set,
             K = len(Example)                
         else: 
             if K != len(Example): 
-                raise ValueError(f"All Examples must be of the same Size!")
+                raise ValueError(f'All Examples must be of the same Size!')
         
 
         

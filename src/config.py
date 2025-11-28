@@ -10,7 +10,33 @@ class IndexingConfig:
     min_word_len: int = 0
     read_path: str = "C:/Studium/LSDIPro/DataXFormer/data/dresden_test"
 
+@dataclass
+class QueryingConfig:
+    tau = 2
 
-def get_default_config() -> IndexingConfig:
-    """Return the default indexing configuration."""
+@dataclass
+class VerticaConfig:
+    cells_table = "main_tokenized"
+    tables_table = None
+    columns_table = "columns_tokenized"
+    table_column = "tableid"
+    column_column = "colid"
+    row_column = "rowid"
+    term_column = "term"
+    term_token_column = "tokenized"
+    table_url_column = None
+    table_title_column = None
+    table_weight_column = None
+    header_column = "header"
+    header_token_column = "header_tokenized"
+
+
+def get_default_indexing_config() -> IndexingConfig:
     return IndexingConfig()
+
+def get_default_webtable_config() -> QueryingConfig:
+    return QueryingConfig()
+
+
+def get_default_vertica_config() -> VerticaConfig:
+    return VerticaConfig()
