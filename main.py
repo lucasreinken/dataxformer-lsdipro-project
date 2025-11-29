@@ -33,4 +33,4 @@ def main():
     print(vertica_client.find_xy_candidates(X, Y, tau))
 
 if __name__ == "__main__":
-    main()
+    main() 
