@@ -23,6 +23,7 @@ class WebTableIndexer:
         stemmer_map = {
             "porter": PorterStemmer,
         }
+        #### Unnötig. Es gibt nur einen.
 
         # Validate + construct the stemmer
         if config.stemmer not in stemmer_map:
@@ -46,9 +47,14 @@ class WebTableIndexer:
         self.read_path = Path(config.read_path)
 
     # TODO: where is cache really useful?
+    ###### Der Cahce wurde eingeführt, um beim Stemming Prozess für die Generierung der Projections, 
+    ###### Was unsere längste Rechenleistung ist, einiges an Arbeit wegzunehmen. 
+    ##### Während "Inference" - nenne ich das ganze jetzt mal - ist das total egal. In 1 zu 1 beziehungen sollten werte 
+    ##### Eh unique sein. Das where ist beim Aufsetzen der Projections. 
     @cache
     def tokenize(self, text:str) -> str:
         # TODO: Docstring
+        #### Brauch keinen Docstring, das ist ein Tokenizer. Was macht der wohl? 
 
         if not text or not text.strip():
             return None
@@ -81,6 +87,9 @@ class WebTableIndexer:
         """
         # TODO: make it configurable (config.py)
         # MAYBE PUT IT INTO TOKENIZE AND MAKE IT RETURN NONE IF NO WORDS (INSTEAD OF .STRIP())
+        #### Wäre nützlich, wenn das hier ein Framework ist. Da wir aber immer das selbe machen, ist das egal. 
+        #### Wenn du es konfigurierbar machen möchtest, dann machst du aus jedem Teilding eine def und rufst sie so auf, 
+        #### Wie den Stemmer oben. 
         words = text.lower().translate(str.maketrans("", "", string.punctuation))
         processed_words = word_tokenize(words)
         return processed_words
@@ -201,3 +210,10 @@ class WebTableIndexer:
                         )
 
         return projections
+    
+
+
+
+    def compare_it(indexes, examples): 
+        table_id, xcol_id, ycol_id = indexes
+        

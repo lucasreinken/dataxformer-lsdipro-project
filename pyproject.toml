@@ -15,7 +15,8 @@ dependencies = [
     "tabulate",             # Pretty-printing tables
     "orjson",
     "vertica_python",
-    "dotenv"
+    "dotenv", 
+    "streamlit",
 ]
 
 # Development and research tool
