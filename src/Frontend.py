@@ -1,5 +1,20 @@
+import sys
+import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(current_dir)
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+
 import streamlit as st
 import pandas as pd
+from src.web_tables.indexing import WebTableIndexer
+from src.config import IndexingConfig as cnf
+from src.config import get_default_vertica_config
+from src.database import VerticaClient
+
+indexer = WebTableIndexer(cnf)
 
 st.set_page_config(page_title="Frontend", layout="wide")
 
@@ -8,11 +23,11 @@ if 'table_configured' not in st.session_state:
 if 'data' not in st.session_state:
     st.session_state.data = {}
 if 'num_x_cols' not in st.session_state:
-    st.session_state.num_x_cols = 2
+    st.session_state.num_x_cols = 1
 if 'num_y_cols' not in st.session_state:
-    st.session_state.num_y_cols = 2
+    st.session_state.num_y_cols = 1
 if 'num_rows' not in st.session_state:
-    st.session_state.num_rows = 5
+    st.session_state.num_rows = 3
 
 def configure_table():
     """Create Table"""
@@ -83,6 +98,20 @@ with col3:
         key='input_rows'
     )
 
+# NEU: Tau-Eingabefeld hinzufügen
+st.write("")  # Spacing
+tau_col1, tau_col2, tau_col3 = st.columns([2, 2, 4])
+with tau_col1:
+    tau = st.number_input(
+        "Tau Threshold",
+        min_value=1.0,
+        max_value=5.0,
+        value=1.0,
+        step=1.0,
+        key='input_tau',
+        help="Threshold value for similarity matching"
+    )
+
 with col4:
     st.write("")  
     st.write("")  
@@ -138,6 +167,45 @@ if st.session_state.table_configured:
     with col_submit:
         if st.button("Submit", type="primary", use_container_width=True):
             x_lists, y_lists = submit_data()
+
+
+
+
+
+
+
+            ###Das hier ist alles, was so auch im Main wäre. Das hier ist basically unsere neue Main. 
+            cleaned_x_lists = [indexer.tokenize_list(col) for col in x_lists]
+            cleaned_y_lists = [indexer.tokenize_list(col) for col in y_lists]
+            tau = st.session_state.input_tau
+
+            config = get_default_vertica_config()
+
+            vertica_client = VerticaClient(config)
+
+            X = next(iter(cleaned_x_lists)) ####Nötig, da es ja eine Liste in einer Liste ist. Wenn der Multicolumn Input kann
+                                            ####Sollte das hier nicht mehr nötig sein. 
+            Y = next(iter(cleaned_y_lists))
+            z = vertica_client.find_xy_candidates(X, Y, tau)
+            erg = vertica_client.row_validation(z, X, Y, tau)
+            st.write("Found Tables") 
+            #st.write(erg)
+            #print(type(erg))
+            #print(erg[0]) 
+            Querries = ["Istanbul", "Madrid"]   ####Muss auch noch ins Frontend 
+            tokenized_querries = indexer.tokenize_list(Querries)
+            list_of_answers = list()
+            for i in range(5): #####Das hier statt EM, da müsste eignetlich die Funktion greifen. 
+                answers = vertica_client.get_y(erg[i], tokenized_querries)
+                list_of_answers.append(answers)
+            st.write(list_of_answers)   ####Darstellung muss überarbeitet werden. 
+
+
+
+
+
+
+
             st.success("Submit Successful!")
     
     with col_reset:
@@ -149,3 +217,4 @@ if st.session_state.table_configured:
 
 ##Todo: Check if all Values are Filled in 
 ##Todo: Demo Mode with Predefined Values 
+#streamlit run /Users/christophhalberstadt/Documents/GitHub/ProjectDataXFormer/src/Frontend.py  

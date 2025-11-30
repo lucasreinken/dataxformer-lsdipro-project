@@ -62,7 +62,6 @@ class VerticaClient:
             SELECT {self.table_column}, {self.column_column}
             FROM {self.cells_table}
             WHERE {self.term_token_column} IN ({x_placeholders})
-              AND tableid < 10000000
             GROUP BY {self.table_column}, {self.column_column}
             HAVING COUNT(DISTINCT {self.term_token_column}) >= %s
         ),
@@ -70,7 +69,6 @@ class VerticaClient:
             SELECT {self.table_column}, {self.column_column}
             FROM {self.cells_table}
             WHERE {self.term_token_column} IN ({y_placeholders})
-              AND tableid < 10000000
             GROUP BY {self.table_column}, {self.column_column}
             HAVING COUNT(DISTINCT {self.term_token_column}) >= %s
         )
@@ -87,7 +85,7 @@ class VerticaClient:
         print(sql)
 
  
-        params = X + [tau] + Y + [tau]
+        params = X + [tau] + Y + [tau]      ###Mit langer Input Liste müsste man hier nur nach anz_zeilen ein Tau einfügen
 
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
@@ -108,7 +106,8 @@ class VerticaClient:
     def row_validation(self, index_list:list, X:list, Y:list, tau:int): 
         
         examples = ' UNION ALL '.join(["SELECT %s, %s"] * len(X)) 
-        params = [j for i in zip(X, Y) for j in i] + [tau]
+        params = [j for i in zip(X, Y) for j in i] + [tau]  ##Müsste mit auch strided irgendwie funktionieren. 
+                                                            ##Einfach liste vorher einteilen in größere liste und dann * 
 
         validated_results = list()
 

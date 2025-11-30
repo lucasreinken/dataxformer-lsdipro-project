@@ -5,6 +5,7 @@ from nltk.tokenize import word_tokenize
 import string
 from functools import cache
 from nltk.stem import PorterStemmer
+from nltk.corpus import stopwords               #Stopwords aus nltk
 
 from pathlib import Path
 import gzip
@@ -51,6 +52,15 @@ class WebTableIndexer:
     ###### Was unsere längste Rechenleistung ist, einiges an Arbeit wegzunehmen. 
     ##### Während "Inference" - nenne ich das ganze jetzt mal - ist das total egal. In 1 zu 1 beziehungen sollten werte 
     ##### Eh unique sein. Das where ist beim Aufsetzen der Projections. 
+
+    def tokenize_list(self, in_list:list)->list: 
+        tokenized_col = list()
+        for elem in in_list: 
+            token = self.tokenize(elem)
+            tokenized_col.append(token)
+        
+        return tokenized_col
+
     @cache
     def tokenize(self, text:str) -> str:
         # TODO: Docstring
@@ -216,4 +226,3 @@ class WebTableIndexer:
 
     def compare_it(indexes, examples): 
         table_id, xcol_id, ycol_id = indexes
-        
