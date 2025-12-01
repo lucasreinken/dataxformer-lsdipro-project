@@ -18,6 +18,7 @@ indexer = WebTableIndexer(cnf)
 
 st.set_page_config(page_title="Frontend", layout="wide")
 
+###Example Table
 if 'table_configured' not in st.session_state:
     st.session_state.table_configured = False
 if 'data' not in st.session_state:
@@ -29,6 +30,18 @@ if 'num_y_cols' not in st.session_state:
 if 'num_rows' not in st.session_state:
     st.session_state.num_rows = 3
 
+###Query Table
+if 'query_table_configured' not in st.session_state:
+    st.session_state.query_table_configured = False
+if 'query_data' not in st.session_state:
+    st.session_state.query_data = {}
+if 'num_query_x_cols' not in st.session_state:
+    st.session_state.num_query_x_cols = 1
+if 'num_query_rows' not in st.session_state:
+    st.session_state.num_query_rows = 2
+
+
+###Example Table 
 def configure_table():
     """Create Table"""
     st.session_state.table_configured = True
@@ -65,6 +78,31 @@ def submit_data():
     
     return x_lists, y_lists
 
+def configure_query_table():
+    """Create Query Table"""
+    st.session_state.query_table_configured = True
+
+    st.session_state.query_data = {}
+    for i in range(st.session_state.num_query_x_cols):
+        st.session_state.query_data[f'QX{i+1}'] = [''] * st.session_state.num_query_rows
+
+def reset_query_table():
+    """Reset Query Table"""
+    st.session_state.query_table_configured = False
+    st.session_state.query_data = {}
+
+def submit_query_data():
+    """Submit the Query Data"""
+    query_x_lists = []
+    
+    for i in range(st.session_state.num_query_x_cols):
+        col_name = f'QX{i+1}'
+        query_x_lists.append(st.session_state.query_data[col_name].copy())
+    
+    st.session_state.submitted_queries = query_x_lists
+    st.session_state.query_data_submitted = True
+    
+    return query_x_lists
 
 
 st.header("Configuration of Submission Table")
@@ -98,8 +136,7 @@ with col3:
         key='input_rows'
     )
 
-# NEU: Tau-Eingabefeld hinzufügen
-st.write("")  # Spacing
+st.write("") 
 tau_col1, tau_col2, tau_col3 = st.columns([2, 2, 4])
 with tau_col1:
     tau = st.number_input(
@@ -165,53 +202,194 @@ if st.session_state.table_configured:
     col_submit, col_reset = st.columns([1, 4])
     
     with col_submit:
-        if st.button("Submit", type="primary", use_container_width=True):
+        if st.button("Save Training Data", type="secondary", use_container_width=True):
             x_lists, y_lists = submit_data()
-
-
-
-
-
-
-
-            ###Das hier ist alles, was so auch im Main wäre. Das hier ist basically unsere neue Main. 
-            cleaned_x_lists = [indexer.tokenize_list(col) for col in x_lists]
-            cleaned_y_lists = [indexer.tokenize_list(col) for col in y_lists]
-            tau = st.session_state.input_tau
-
-            config = get_default_vertica_config()
-
-            vertica_client = VerticaClient(config)
-
-            X = next(iter(cleaned_x_lists)) ####Nötig, da es ja eine Liste in einer Liste ist. Wenn der Multicolumn Input kann
-                                            ####Sollte das hier nicht mehr nötig sein. 
-            Y = next(iter(cleaned_y_lists))
-            z = vertica_client.find_xy_candidates(X, Y, tau)
-            erg = vertica_client.row_validation(z, X, Y, tau)
-            st.write("Found Tables") 
-            #st.write(erg)
-            #print(type(erg))
-            #print(erg[0]) 
-            Querries = ["Istanbul", "Madrid"]   ####Muss auch noch ins Frontend 
-            tokenized_querries = indexer.tokenize_list(Querries)
-            list_of_answers = list()
-            for i in range(5): #####Das hier statt EM, da müsste eignetlich die Funktion greifen. 
-                answers = vertica_client.get_y(erg[i], tokenized_querries)
-                list_of_answers.append(answers)
-            st.write(list_of_answers)   ####Darstellung muss überarbeitet werden. 
-
-
-
-
-
-
-
-            st.success("Submit Successful!")
-    
+            st.success("Training Data Saved!")
+        
     with col_reset:
-        if st.button("Reset", use_container_width=False):
+        if st.button("Reset Training Table", use_container_width=False):
             reset_table()
             st.rerun()
+
+
+###Querry Table 
+st.write("---")
+st.header("Configuration of Query Table")
+
+qcol1, qcol2, qcol3 = st.columns([2, 2, 4])
+
+with qcol1:
+    num_query_x_cols = st.number_input(
+        "Amount of Query X Columns",
+        min_value=1,
+        max_value=10,
+        value=st.session_state.num_query_x_cols,
+        key='input_query_x_cols'
+    )
+
+with qcol2:
+    num_query_rows = st.number_input(
+        "Amount of Query Examples",
+        min_value=1,
+        max_value=100,
+        value=st.session_state.num_query_rows,
+        key='input_query_rows'
+    )
+
+with qcol3:
+    st.write("")  
+    st.write("")  
+    if st.button("Create Query Table", type="primary"):
+        st.session_state.num_query_x_cols = num_query_x_cols
+        st.session_state.num_query_rows = num_query_rows
+        configure_query_table()
+        st.rerun()
+
+if st.session_state.query_table_configured:
+    st.header("Query Input Table")
+    
+    st.subheader("Query X-Values")
+    
+    query_x_cols = st.columns(st.session_state.num_query_x_cols)
+    for col_idx in range(st.session_state.num_query_x_cols):
+        with query_x_cols[col_idx]:
+            st.write(f"**Query X{col_idx+1}**")
+            for row_idx in range(st.session_state.num_query_rows):
+                key = f'QX{col_idx+1}_row{row_idx}'
+                value = st.text_input(
+                    f"Query {row_idx+1}",
+                    value=st.session_state.query_data[f'QX{col_idx+1}'][row_idx],
+                    key=key,
+                    label_visibility="collapsed"
+                )
+                st.session_state.query_data[f'QX{col_idx+1}'][row_idx] = value
+    
+    st.write("")
+    qcol_submit, qcol_reset = st.columns([1, 4])
+    
+    with qcol_submit:
+        if st.button("Submit Queries", type="primary", use_container_width=True):
+            query_x_lists = submit_query_data()
+            st.success("Queries Submitted Successfully!")
+    
+    with qcol_reset:
+        if st.button("Reset Query Table", use_container_width=False):
+            reset_query_table()
+            st.rerun()
+
+
+
+
+###Logic 
+if 'data_submitted' in st.session_state and st.session_state.data_submitted and \
+   'query_data_submitted' in st.session_state and st.session_state.query_data_submitted:
+    
+    st.write("---")
+    st.header("Processing Results")
+    
+    with st.spinner("Processing data..."):
+
+
+        ###Da das hier die "Hauptlogik" ist, diese vielleicht in die Main packen und das dann aufrufen?
+        ###Dann müssen wir hier so gut wie nichts ändern und können, zum testen, immer nur den Logik befehl hier drin tauschen. 
+
+        x_lists = st.session_state.submitted_x
+        y_lists = st.session_state.submitted_y
+        query_x_lists = st.session_state.submitted_queries
+        
+
+        cleaned_x_lists     = [indexer.tokenize_list(col) for col in x_lists]
+        cleaned_y_lists     = [indexer.tokenize_list(col) for col in y_lists]
+        tokenized_querries  = [indexer.tokenize_list(col) for col in query_x_lists]
+        tau = st.session_state.input_tau
+
+        config = get_default_vertica_config()
+        vertica_client = VerticaClient(config)
+
+
+
+
+
+
+
+        ####Das hier muss alles überarbeitet werden, EM, Multihop etc. 
+        
+
+        ###Das hier würde automatisch passen, wenn wir Multi-Col untestützen. Das wird hier nur entpackt 
+        X = next(iter(cleaned_x_lists))
+        Y = next(iter(cleaned_y_lists))
+        Q = next(iter(tokenized_querries))
+        print(X, Y, Q, tau)
+
+        ###Das hier ist die volle "Query Pipeline", da müsste Multi-Hop noch rein. 
+        ###Multi-Hop erst nachdem das hier fertig ist? Ja, oder? 
+        z = vertica_client.find_xy_candidates(X, Y, tau)
+        print("Done with z")
+
+        
+        erg = vertica_client.row_validation(z, X, Y, tau) ####Der Check hier kommt erst nach dem Multi-Hop. 
+        print("Done with erg")
+
+
+
+        ####Hier EM und itterativ. Multi erst hier nach? Erst starten, wenn normales nicht für alle x in Q 
+        ####ein Ergebnis gebracht hat? 
+        print(erg[3])
+        answers = vertica_client.get_y(erg[3], Q)
+
+
+
+
+
+
+
+
+        ###Visualisation of Results
+        st.subheader("Results")
+            
+        if answers:
+
+            rows = []
+            for idx, answer_tuple in enumerate(answers):
+                if answer_tuple:  
+                    row_dict = {}
+                    
+                    row_dict['Query #'] = idx + 1
+
+                    tuple_data = list(answer_tuple)
+
+                    num_x = st.session_state.num_x_cols
+                    for i in range(min(num_x, len(tuple_data))):
+                        row_dict[f'X{i+1}'] = tuple_data[i]
+
+                    num_y = st.session_state.num_y_cols
+                    for i in range(num_y):
+                        if num_x + i < len(tuple_data):
+                            row_dict[f'Y{i+1}'] = tuple_data[num_x + i]
+                    
+                    if len(tuple_data) > num_x + num_y:
+                        row_dict['Frequency'] = tuple_data[num_x + num_y]
+                    
+                    rows.append(row_dict)
+            
+            if rows:
+                df_results = pd.DataFrame(rows)
+                st.dataframe(df_results, use_container_width=True, hide_index=True)
+                
+                csv = df_results.to_csv(index=False)
+                st.download_button(
+                    label="Downlaod as CSV",
+                    data=csv,
+                    file_name="query_results.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.warning("No results to display")
+        else:
+            st.warning("No answers found")
+        
+        st.success("Processing Complete!")
+
 
 
 

@@ -82,7 +82,7 @@ class VerticaClient:
         AND colX.{self.column_column} <> colY.{self.column_column};
         '''
 
-        print(sql)
+        #print(sql)
 
  
         params = X + [tau] + Y + [tau]      ###Mit langer Input Liste müsste man hier nur nach anz_zeilen ein Tau einfügen
