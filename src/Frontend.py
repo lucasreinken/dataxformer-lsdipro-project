@@ -12,7 +12,8 @@ import pandas as pd
 from src.web_tables.indexing import WebTableIndexer
 from src.config import IndexingConfig as cnf
 from src.config import get_default_vertica_config
-from src.database import VerticaClient
+# from src.database import VerticaClient
+from src.database.Querry_Factory import QuerryFactory
 
 indexer = WebTableIndexer(cnf)
 
@@ -303,95 +304,92 @@ if 'data_submitted' in st.session_state and st.session_state.data_submitted and 
         tokenized_querries  = [indexer.tokenize_list(col) for col in query_x_lists]
         tau = st.session_state.input_tau
 
+
         config = get_default_vertica_config()
-        vertica_client = VerticaClient(config)
+
+        qf = QuerryFactory(config)
+        print("Start 1")
+        z = qf.find_xy_candidates(cleaned_x_lists, cleaned_y_lists, tau)
+        print("Finish")
+        erg = qf.stable_row_val(z, cleaned_x_lists, cleaned_y_lists, tau)
+        print("Done with erg")
+        
+
+        st.write(erg)
 
 
 
-
-
-
-
+        ##
+        ##Example with matching Tokens: Table 30440039 Mark Zuckerberg Facebook Line 128, Biz Stone Twitter Line 25 
         ####Das hier muss alles überarbeitet werden, EM, Multihop etc. 
         
 
-        ###Das hier würde automatisch passen, wenn wir Multi-Col untestützen. Das wird hier nur entpackt 
-        X = next(iter(cleaned_x_lists))
-        Y = next(iter(cleaned_y_lists))
-        Q = next(iter(tokenized_querries))
-        print(X, Y, Q, tau)
-
-        ###Das hier ist die volle "Query Pipeline", da müsste Multi-Hop noch rein. 
-        ###Multi-Hop erst nachdem das hier fertig ist? Ja, oder? 
-        z = vertica_client.find_xy_candidates(X, Y, tau)
-        print("Done with z")
-
-        
-        erg = vertica_client.row_validation(z, X, Y, tau) ####Der Check hier kommt erst nach dem Multi-Hop. 
-        print("Done with erg")
+        # Q = next(iter(tokenized_querries))
 
 
+        # ####Hier EM und itterativ. Multi erst hier nach? Erst starten, wenn normales nicht für alle x in Q 
+        # ####ein Ergebnis gebracht hat? 
+        # print(erg[3])
+        # for i in range(5): 
+        #     st.write(erg[i])
+        #     st.write(qf.get_y(erg[i], Q))
 
-        ####Hier EM und itterativ. Multi erst hier nach? Erst starten, wenn normales nicht für alle x in Q 
-        ####ein Ergebnis gebracht hat? 
-        print(erg[3])
-        answers = vertica_client.get_y(erg[3], Q)
+
+        # answers = qf.get_y(erg[1], Q)
 
 
 
 
 
-
-
-
-        ###Visualisation of Results
-        st.subheader("Results")
+        # ###Visualisation of Results
+        # st.subheader("Results")
             
-        if answers:
+        # if answers:
 
-            rows = []
-            for idx, answer_tuple in enumerate(answers):
-                if answer_tuple:  
-                    row_dict = {}
+        #     rows = []
+        #     for idx, answer_tuple in enumerate(answers):
+        #         if answer_tuple:  
+        #             row_dict = {}
                     
-                    row_dict['Query #'] = idx + 1
+        #             row_dict['Query #'] = idx + 1
 
-                    tuple_data = list(answer_tuple)
+        #             tuple_data = list(answer_tuple)
 
-                    num_x = st.session_state.num_x_cols
-                    for i in range(min(num_x, len(tuple_data))):
-                        row_dict[f'X{i+1}'] = tuple_data[i]
+        #             num_x = st.session_state.num_x_cols
+        #             for i in range(min(num_x, len(tuple_data))):
+        #                 row_dict[f'X{i+1}'] = tuple_data[i]
 
-                    num_y = st.session_state.num_y_cols
-                    for i in range(num_y):
-                        if num_x + i < len(tuple_data):
-                            row_dict[f'Y{i+1}'] = tuple_data[num_x + i]
+        #             num_y = st.session_state.num_y_cols
+        #             for i in range(num_y):
+        #                 if num_x + i < len(tuple_data):
+        #                     row_dict[f'Y{i+1}'] = tuple_data[num_x + i]
                     
-                    if len(tuple_data) > num_x + num_y:
-                        row_dict['Frequency'] = tuple_data[num_x + num_y]
+        #             if len(tuple_data) > num_x + num_y:
+        #                 row_dict['Frequency'] = tuple_data[num_x + num_y]
                     
-                    rows.append(row_dict)
+        #             rows.append(row_dict)
             
-            if rows:
-                df_results = pd.DataFrame(rows)
-                st.dataframe(df_results, use_container_width=True, hide_index=True)
+        #     if rows:
+        #         df_results = pd.DataFrame(rows)
+        #         st.dataframe(df_results, use_container_width=True, hide_index=True)
                 
-                csv = df_results.to_csv(index=False)
-                st.download_button(
-                    label="Downlaod as CSV",
-                    data=csv,
-                    file_name="query_results.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.warning("No results to display")
-        else:
-            st.warning("No answers found")
+        #         csv = df_results.to_csv(index=False)
+        #         st.download_button(
+        #             label="Downlaod as CSV",
+        #             data=csv,
+        #             file_name="query_results.csv",
+        #             mime="text/csv"
+        #         )
+        #     else:
+        #         st.warning("No results to display")
+        # else:
+        #     st.warning("No answers found")
         
-        st.success("Processing Complete!")
+        # st.success("Processing Complete!")
 
 
-
+###Example Bill Gates Microsoft line 21 (unser Stemmer stemmed ihn leider als bill gate, token ist aber gates) Mark Zuckerberg Facebook (passt) Steve Ballmer Microsoft 175 Kevin Mitnick Hacker 113
+###Table 30,440,039
 
 ##Todo: Check if all Values are Filled in 
 ##Todo: Demo Mode with Predefined Values 
