@@ -187,3 +187,124 @@ class VerticaClient:
 #####Ganze als WHILE machen, bis es konvergiert. 
 #####Konnte das hier wegen den Connection Issues nicht Testen, Edu funktioniert grade nicht und mit Cisco lädt nichtmal Google
 #####Sonst sollte das hier fast alles sein, was wir schon vorher hatten. 
+
+
+
+
+    # def get_y(self, idx: tuple, Querries: list): 
+    #         """
+    #         Returns the corresponding Y-Values for the x \in Querries as well as a Count of their Frequency
+    #         In: 
+    #             idx: (Table_ID, XCOL_ID, YCOL_ID)
+    #             Querries: list[]
+    #         Out: 
+    #             List[Tuple(x_val, y_val, freq)]
+    #         """
+
+    #         Table_ID, XCOL_ID, YCOL_ID = idx
+
+    #         Querries_placeholders = ' UNION ALL '.join(["SELECT %s"] * len(Querries))
+
+    #         sql = f'''
+    #         WITH Inputs (x_val) AS ({Querries_placeholders})
+    #         SELECT 
+    #             p.x_val, 
+    #             c2.{self.term_token_column},
+    #             COUNT(*)
+    #         FROM Inputs p 
+    #         JOIN {self.cells_table} c1
+    #         ON p.x_val = c1.{self.term_token_column}
+    #         AND c1.tableid = {Table_ID}
+    #         AND c1.{self.column_column} = {XCOL_ID}
+    #         JOIN {self.cells_table} c2 
+    #         ON c1.{self.row_column} = c2.{self.row_column}
+    #         AND c2.tableid = {Table_ID}
+    #         AND c2.{self.column_column} = {YCOL_ID}
+    #         GROUP BY p.x_val, c2.{self.term_token_column}
+    #         '''
+            
+    #         with self.conn.cursor() as cur:
+    #             cur.execute(sql, Querries)
+    #             return cur.fetchall()
+            
+
+
+    ###Greedy Set Cover Strategy 
+    # def stable_get_y(self, idx: tuple, Querries: list[list]): 
+
+
+    #     print(f"Querries: {Querries}")
+    #     anz_cols_q = len(Querries)
+    #     anz_rows_q = len(next(iter(Querries)))
+    #     print(f"Idx: {idx}, ")
+ 
+    #     Table_ID = idx[0]
+    #     X_COL_IDs = idx[1:1+anz_cols_q]
+    #     Y_COL_IDs = idx[1+anz_cols_q:]
+       
+
+    #     anz_cols_answer = len(Y_COL_IDs)
+    #     print(f"Anz X-Col: {anz_cols_q}, Anz Y-Col: {anz_cols_answer}")
+    #     print(f"X-Cols: {X_COL_IDs}, Y-Cols: {Y_COL_IDs}")
+
+    #     querry_pairs = [subelem for elem in zip(*(Querries)) for subelem in elem]
+        
+    #     input_selects = ", ".join([f"""%s::varchar as val_{self.get_prefix(idx, anz_cols_q)}""" for idx in range(anz_cols_q)])
+    #     joined_input_selects= " UNION ALL ".join([f"SELECT {input_selects}"] * anz_rows_q)
+
+
+    #     x_selects = [f"p.val_{self.get_prefix(idx, anz_cols_q)}" for idx in range(anz_cols_q)]
+    #     y_selects = [f"{self.get_prefix(idx+anz_cols_q, anz_cols_q)}.{self.term_token_column}" for idx in range(anz_cols_answer)]
+    #     print(y_selects)
+    #     all_selects = ", ".join(x_selects + y_selects)
+
+
+    #     joins = []        
+    #     for idx, col_id in enumerate(X_COL_IDs):
+    #         alias = self.get_prefix(idx, anz_cols_q)
+            
+    #         conditions = [
+    #             f"{alias}.{self.table_column} = {Table_ID}",
+    #             f"{alias}.{self.column_column} = {col_id}",
+    #             f"{alias}.{self.term_token_column} = p.val_{alias}" 
+    #         ]
+            
+    #         if idx != 0:
+    #             conditions.append(f"{alias}.{self.row_column} = {self.get_prefix(0, anz_cols_q)}.{self.row_column}")
+            
+    #         join_sql = f"JOIN {self.cells_table} {alias} ON {' AND '.join(conditions)}"
+    #         joins.append(join_sql)
+        
+        
+    #     for idx, col_id in enumerate(Y_COL_IDs):
+    #         alias = self.get_prefix(idx + anz_cols_q, anz_cols_q)
+    #         conditions = [
+    #             f"{alias}.{self.table_column} = {Table_ID}",
+    #             f"{alias}.{self.column_column} = {col_id}",
+    #             f"{alias}.{self.row_column} = {self.get_prefix(0, anz_cols_q)}.{self.row_column}"
+    #         ]
+    #         join_sql = f"JOIN {self.cells_table} {alias} ON {' AND '.join(conditions)}"
+    #         joins.append(join_sql)
+
+
+
+    #     sql = f'''
+    #     WITH Inputs ({", ".join([f"val_{self.get_prefix(idx, anz_cols_q)}" for idx in range(anz_cols_q)])}) AS (
+    #         {joined_input_selects}
+    #     )
+    #     SELECT 
+    #         {all_selects},
+    #         COUNT(*) as freq
+    #     FROM Inputs p
+    #     {chr(10).join(joins)}
+    #     GROUP BY 
+    #         {all_selects}
+    #     '''
+
+    #     print(sql)
+    #     print(querry_pairs)
+
+        
+    #     with self.conn.cursor() as cur:
+    #         cur.execute(sql, querry_pairs)
+    #         return cur.fetchall()

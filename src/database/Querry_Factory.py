@@ -55,11 +55,14 @@ class QuerryFactory:
     def find_xy_candidates(
         self,
         X_cols: list[list[str]],
-        Y_cols: list[list[str]],
+        Y_cols: list[list[str]] | None,
         tau: int,
+        multi_hop:bool = False,
         ):
+        if multi_hop: 
+            Y_cols = list()
 
-        if not X_cols or not Y_cols:
+        if not X_cols or not Y_cols and not multi_hop:
             raise ValueError("X_cols and Y_cols must not be empty!")
         
         params = [subelem for elem in (X_cols + Y_cols) for subelem in elem]
@@ -107,7 +110,7 @@ class QuerryFactory:
         A_part = f"""WITH \n""" + ", \n".join(Querry)
         B_part = f"""\nSELECT \n{Col_names[0]}.{self.table_column} AS table_id, \n""" + ", \n".join(b_parts)
         C_part = f""" \nFROM """ + "\nJOIN ".join(equal_parts)
-        D_part = f"""\nWHERE """ + " \nAND ".join(unequal_part)
+        D_part = f"""\nWHERE """ + " \nAND ".join(unequal_part) if unequal_part else """"""
         sql = A_part + B_part + C_part + D_part + ";"
 
         print(sql)
@@ -140,9 +143,9 @@ class QuerryFactory:
 
         params = ex_pairs + Table_IDs
 
-        select_str = ", ".join([f"""X0.{self.table_column}"""] + [f"""{self.get_prefix(idx, x_len)}.{self.column_column}""" for idx in range(len_cols)])
+        select_str = ", ".join([f"""{self.get_prefix(0, x_len)}.{self.table_column}"""] + [f"""{self.get_prefix(idx, x_len)}.{self.column_column}""" for idx in range(len_cols)])
 
-        from_part = f"FROM {self.cells_table} X0"
+        from_part = f"FROM {self.cells_table} {self.get_prefix(0, x_len)}"
 
 
         joins = []
@@ -155,8 +158,8 @@ class QuerryFactory:
             if idx != 0: 
                 join_str = f"""
                 JOIN {self.cells_table} {self.get_prefix(idx, x_len)}
-                    ON X0.{self.table_column} = {self.get_prefix(idx, x_len)}.{self.table_column} 
-                    AND X0.{self.row_column} = {self.get_prefix(idx, x_len)}.{self.row_column}
+                    ON {self.get_prefix(0, x_len)}.{self.table_column} = {self.get_prefix(idx, x_len)}.{self.table_column} 
+                    AND {self.get_prefix(0, x_len)}.{self.row_column} = {self.get_prefix(idx, x_len)}.{self.row_column}
                 """
                 joins.append(join_str)
         
@@ -175,7 +178,7 @@ class QuerryFactory:
             JOIN Examples e
                 ON {conditions_str}
             WHERE 
-                X0.{self.table_column} IN ({table_id_placeholders})
+                {self.get_prefix(0, x_len)}.{self.table_column} IN ({table_id_placeholders})
             GROUP BY 
                 {select_str}
             HAVING 
@@ -202,40 +205,82 @@ class QuerryFactory:
         return validated_results
 
 
-    def get_y(self, idx: tuple, Querries: list): 
-            """
-            Returns the corresponding Y-Values for the x \in Querries as well as a Count of their Frequency
-            In: 
-                idx: (Table_ID, XCOL_ID, YCOL_ID)
-                Querries: list[]
-            Out: 
-                List[Tuple(x_val, y_val, freq)]
-            """
 
-            Table_ID, XCOL_ID, YCOL_ID = idx
 
-            Querries_placeholders = ' UNION ALL '.join(["SELECT %s"] * len(Querries))
+    def stable_get_y(self, idx: tuple, Querries: list[list]): 
 
-            sql = f'''
-            WITH Inputs (x_val) AS ({Querries_placeholders})
-            SELECT 
-                p.x_val, 
-                c2.{self.term_token_column},
-                COUNT(*)
-            FROM Inputs p 
-            JOIN {self.cells_table} c1
-            ON p.x_val = c1.{self.term_token_column}
-            AND c1.tableid = {Table_ID}
-            AND c1.{self.column_column} = {XCOL_ID}
-            JOIN {self.cells_table} c2 
-            ON c1.{self.row_column} = c2.{self.row_column}
-            AND c2.tableid = {Table_ID}
-            AND c2.{self.column_column} = {YCOL_ID}
-            GROUP BY p.x_val, c2.{self.term_token_column}
-            '''
+        ###Soll er lieber Tokens oder die originalen Werte zurückgeben? Für den Join würde ersteres natürlich mehr Sinn ergeben. Bool Val einfügen um beides zu ermöglichen? 
+        print(f"Querries: {Querries}")
+        anz_cols_q = len(Querries)
+        anz_rows_q = len(next(iter(Querries)))
+        print(f"Idx: {idx}, ")
+ 
+        Table_ID = idx[0]
+        X_COL_IDs = idx[1:1+anz_cols_q]
+        Y_COL_IDs = idx[1+anz_cols_q:]
+       
+
+        anz_cols_answer = len(Y_COL_IDs)
+        print(f"Anz X-Col: {anz_cols_q}, Anz Y-Col: {anz_cols_answer}")
+        print(f"X-Cols: {X_COL_IDs}, Y-Cols: {Y_COL_IDs}")
+
+
+
+        querry_pairs = [subelem for elem in zip(*(Querries)) for subelem in elem]
+        
+        input_selects = ", ".join([f"""%s::varchar as val_{self.get_prefix(idx, anz_cols_q)}""" for idx in range(anz_cols_q)])
+        joined_input_selects= " UNION ALL ".join([f"SELECT {input_selects}"] * anz_rows_q)
+
+
+
+        ###Das hier gibt es genau so bei Val. In eine Funktion packen und da machen lassen? 
+        x_selects = [f"p.val_{self.get_prefix(idx, anz_cols_q)}" for idx in range(anz_cols_q)]
+        y_selects = [f"{self.get_prefix(idx+anz_cols_q, anz_cols_q)}.{self.term_token_column}" for idx in range(anz_cols_answer)]
+        print(y_selects)
+        all_selects = ", ".join(x_selects + y_selects)
+
+
+
+
+
+        joins = []               
+        for idx, col_id in enumerate(X_COL_IDs + Y_COL_IDs):
+            alias = self.get_prefix(idx, anz_cols_q)
             
-            with self.conn.cursor() as cur:
-                cur.execute(sql, Querries)
-                return cur.fetchall()
+            conditions = [
+                f"{alias}.{self.table_column} = {Table_ID}",
+                f"{alias}.{self.column_column} = {col_id}",
+            ]
+
+            if idx < anz_cols_q: 
+                conditions.append(f"{alias}.{self.term_token_column} = p.val_{alias}")
+            
+            if 0 != idx: 
+                conditions.append(f"{alias}.{self.row_column} = {self.get_prefix(0, anz_cols_q)}.{self.row_column}")
+            
+            join_sql = f"JOIN {self.cells_table} {alias} ON {' AND '.join(conditions)}"
+            joins.append(join_sql)
 
 
+
+
+        sql = f'''
+        WITH Inputs ({", ".join([f"val_{self.get_prefix(idx, anz_cols_q)}" for idx in range(anz_cols_q)])}) AS (
+            {joined_input_selects}
+        )
+        SELECT 
+            {all_selects},
+            COUNT(*) as freq
+        FROM Inputs p
+        {chr(10).join(joins)}
+        GROUP BY 
+            {all_selects}
+        '''
+
+        print(sql)
+        print(querry_pairs)     ###Mache ich auch jedes mal. Decorator!!! 
+
+        
+        with self.conn.cursor() as cur:
+            cur.execute(sql, querry_pairs)
+            return cur.fetchall()
