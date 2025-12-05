@@ -206,18 +206,18 @@ if st.session_state.tables_configured:
     action_col1, action_col2, action_col3 = st.columns([1, 1, 3])
     
     with action_col1:
-        if st.button("Save Data", type="secondary", use_container_width=True):
+        if st.button("Save Data", type="secondary", width="stretch"):
             submit_all_data()
             st.success("Data Saved!")
     
     with action_col2:
-        if st.button("Reset Tables", use_container_width=True):
+        if st.button("Reset Tables", width="stretch"):
             reset_tables()
             st.rerun()
     
     with action_col3:
         if st.session_state.data_submitted:
-            if st.button("🚀 START PROCESSING", type="primary", use_container_width=True):
+            if st.button("🚀 START PROCESSING", type="primary", width="stretch"):
                 st.session_state.start_processing = True
                 st.rerun()
 
@@ -321,7 +321,7 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
             
             if rows:
                 df_results = pd.DataFrame(rows)
-                st.dataframe(df_results, use_container_width=True, hide_index=True)
+                st.dataframe(df_results, width="stretch", hide_index=True)
                 
                 csv = df_results.to_csv(index=False)
                 st.download_button(
