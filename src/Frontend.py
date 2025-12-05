@@ -12,7 +12,7 @@ import pandas as pd
 from src.web_tables.indexing import WebTableIndexer
 from src.config import IndexingConfig as cnf
 from src.config import get_default_vertica_config
-from src.database.Querry_Factory import QuerryFactory
+from src.database.query_factory import QueryFactory
 
 indexer = WebTableIndexer(cnf)
 
@@ -246,7 +246,7 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
 
         ##Init of Algorithm 
         config = get_default_vertica_config()
-        qf = QuerryFactory(config)
+        qf = QueryFactory(config)
 
 
         ##Logic

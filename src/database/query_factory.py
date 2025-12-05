@@ -2,7 +2,7 @@ import os
 import vertica_python
 from dotenv import load_dotenv
 
-class QuerryFactory:
+class QueryFactory:
 
     def __init__(self, config) -> None:
         load_dotenv()
@@ -52,6 +52,7 @@ class QuerryFactory:
         else:
             return f"Y{idx - cutoff}"
         
+    # TODO: why is the tokenized projection not used (can see it through EXPLAIN)???
     def find_xy_candidates(
         self,
         X_cols: list[list[str]],
@@ -113,8 +114,8 @@ class QuerryFactory:
         D_part = f"""\nWHERE """ + " \nAND ".join(unequal_part) if unequal_part else """"""
         sql = A_part + B_part + C_part + D_part + ";"
 
-        print(sql)
-        print(params)
+        # print(sql)
+        # print(params)
 
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
@@ -185,8 +186,8 @@ class QuerryFactory:
                 COUNT(*) >= {tau}
         '''
 
-        print(sql)
-        print(params)
+        # print(sql)
+        # print(params)
 
         validated_results = list()
         candidates_set = set(tuple(idx) for idx in index_list)
@@ -210,10 +211,10 @@ class QuerryFactory:
     def stable_get_y(self, idx: tuple, Querries: list[list]): 
 
         ###Soll er lieber Tokens oder die originalen Werte zurückgeben? Für den Join würde ersteres natürlich mehr Sinn ergeben. Bool Val einfügen um beides zu ermöglichen? 
-        print(f"Querries: {Querries}")
+        # print(f"Querries: {Querries}")
         anz_cols_q = len(Querries)
         anz_rows_q = len(next(iter(Querries)))
-        print(f"Idx: {idx}, ")
+        # print(f"Idx: {idx}, ")
  
         Table_ID = idx[0]
         X_COL_IDs = idx[1:1+anz_cols_q]
@@ -221,8 +222,8 @@ class QuerryFactory:
        
 
         anz_cols_answer = len(Y_COL_IDs)
-        print(f"Anz X-Col: {anz_cols_q}, Anz Y-Col: {anz_cols_answer}")
-        print(f"X-Cols: {X_COL_IDs}, Y-Cols: {Y_COL_IDs}")
+        # print(f"Anz X-Col: {anz_cols_q}, Anz Y-Col: {anz_cols_answer}")
+        # print(f"X-Cols: {X_COL_IDs}, Y-Cols: {Y_COL_IDs}")
 
 
 
@@ -236,7 +237,7 @@ class QuerryFactory:
         ###Das hier gibt es genau so bei Val. In eine Funktion packen und da machen lassen? 
         x_selects = [f"p.val_{self.get_prefix(idx, anz_cols_q)}" for idx in range(anz_cols_q)]
         y_selects = [f"{self.get_prefix(idx+anz_cols_q, anz_cols_q)}.{self.term_token_column}" for idx in range(anz_cols_answer)]
-        print(y_selects)
+        # print(y_selects)
         all_selects = ", ".join(x_selects + y_selects)
 
 
@@ -277,8 +278,8 @@ class QuerryFactory:
             {all_selects}
         '''
 
-        print(sql)
-        print(querry_pairs)     ###Mache ich auch jedes mal. Decorator!!! 
+        # print(sql)
+        # print(querry_pairs)     ###Mache ich auch jedes mal. Decorator!!! 
 
         
         with self.conn.cursor() as cur:
