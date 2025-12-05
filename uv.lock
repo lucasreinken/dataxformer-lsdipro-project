@@ -601,6 +601,7 @@ dependencies = [
     { name = "streamlit" },
     { name = "tabulate" },
     { name = "torch" },
+    { name = "tqdm" },
     { name = "vertica-python" },
 ]
 
@@ -624,6 +625,7 @@ requires-dist = [
     { name = "streamlit" },
     { name = "tabulate" },
     { name = "torch" },
+    { name = "tqdm" },
     { name = "vertica-python" },
 ]
 

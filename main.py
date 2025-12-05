@@ -1,36 +1,33 @@
 from src.web_tables.indexing import WebTableIndexer
+from src.web_tables.ranking import WebTableRanker
 from src.config import (
     get_default_vertica_config,
-    get_default_indexing_config
+    get_default_indexing_config,
+    get_default_ranking_config
     )
 from src.database import VerticaClient
 
 def main():
-    
-    config = get_default_indexing_config()
-    indexer = WebTableIndexer(config)
 
-    # cells_dict, tables_dict, columns_dict = indexer.create_dicts()
+    X = [
+    "ord", "dfw", "atl", "mia", "bos",
+    "yyz", "yvr", "yul",
+    "syd", "mel", "akl"
+    ]
 
-    # print(cells_dict)
-    # print(tables_dict)
-    # print(columns_dict)
+    Y = [
+    "chicago", "dallas", "atlanta", "miami", "boston",
+    "toronto", "vancouver", "montreal",
+    "sydney", "melbourne", "auckland"
+    ]
 
-    print(indexer.tokenize("the Berlin"))
+    tau = 2
 
-    X = ["ber"]
-    Y = ["berlin"]
-    tau = 1
+    config = get_default_ranking_config()
 
-    config = get_default_vertica_config()
+    ranker = WebTableRanker(config)
 
-    vertica_client = VerticaClient(config)
-
-    # 2x
-    # WHERE {self.term_token_column} IN ({x_placeholders})  
-    #   AND tableid < 1000000
-
-    print(vertica_client.find_xy_candidates(X, Y, tau))
+    print(ranker.expectation_maximization(X, Y, tau, ["led", "gva", "kei", "hel", "lis", "svp", "osl", "arn", "bru", "zrh"]))
 
 if __name__ == "__main__":
     main() 
