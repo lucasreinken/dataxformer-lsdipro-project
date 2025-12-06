@@ -141,32 +141,7 @@ class VerticaClient:
                     validated_results.append(idx)
         
         return validated_results
-    #######Hier nach müsste dann Expectation Maximization kommen und die beste(n) ausgewählt werden.
-
-    def get_columns(
-        self,
-        index = list[int, int, int]
-    ) -> list[tuple[str, str]]:
-        
-        # TODO: prepare for multi-column
-        
-        sql = f'''
-        SELECT
-            c1.{self.term_token_column} AS x_val,
-            c2.{self.term_token_column} AS y_val
-        FROM {self.cells_table} c1
-        JOIN {self.cells_table} c2
-        ON c1.{self.table_column} = c2.{self.table_column}
-        AND c1.{self.row_column} = c2.{self.row_column}
-        WHERE c1.{self.table_column} = %s
-        AND c1.{self.column_column} = %s
-        AND c2.{self.column_column} = %s;
-        '''
-
-        with self.conn.cursor() as cur:
-            cur.execute(sql, index)
-            return cur.fetchall()
-
+    #######Hier nach müsste dann Expectation Maximization kommen und die beste(n) ausgewählt werden. 
         
     def get_y(self, idx: tuple, Querries: list): 
             """

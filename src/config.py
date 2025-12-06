@@ -15,11 +15,6 @@ class QueryingConfig:
     tau = 2
 
 @dataclass
-class RankingConfig:
-    epsilon = 0.001
-    alpha = 0.99
-
-@dataclass
 class VerticaConfig:
     cells_table = "main_tokenized"
     tables_table = None
@@ -42,8 +37,6 @@ def get_default_indexing_config() -> IndexingConfig:
 def get_default_webtable_config() -> QueryingConfig:
     return QueryingConfig()
 
-def get_default_ranking_config() -> RankingConfig:
-    return RankingConfig()
 
 def get_default_vertica_config() -> VerticaConfig:
     return VerticaConfig()
