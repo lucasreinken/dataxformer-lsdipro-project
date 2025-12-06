@@ -19,15 +19,15 @@ class WebTableRanker:
         scores = self.score(candidates, query_context)
         return
 
-
     def expectation_maximization(self, X: list[str], Y: list[str], Q: list[str]):
+        # TODO: docstring (X, Y, Q have to be tokenized as input -> return untokenized y values)
         
         # TODO: store them more lightweight (e.g. decouple score)
         # answers: (x,y) → {score, tables={t1,t2,…}}
         # tables:  t_id → {score, answers={(x1,y1),(x2,y2)…}}
 
         answers = {
-            (tuple(col_x), tuple(col_y)): {"score": 1.0, "tables": set()}
+            (tuple(col_x), tuple(col_y)): {"score": 1.0, "tables": set(), "term": None}
             for col_x, col_y in zip(zip(*X), zip(*Y))
         }
         # TODO: add Jaccard Similiratity (if labels provided)
@@ -66,10 +66,13 @@ class WebTableRanker:
                 for table_id, answer_list in self.query_engine.find_answers(x_values, y_values, query_values):
                     # TODO: what about None values etc.???
                     for answer in answer_list:
+                        if None in answer[1]:
+                            continue
+                        y_term = tuple(answer[2])
                         answer = (tuple(answer[0]), tuple(answer[1]))
                         if answer not in answers:
                             finished_querying = False
-                            answers[answer] = {"score": 0.0, "tables": set()}
+                            answers[answer] = {"score": 0.0, "tables": set(), "term": y_term}
 
                         tables.setdefault(table_id, {"score": 0.0, "answers": set()})
 
@@ -89,12 +92,14 @@ class WebTableRanker:
 
             # TODO: outside the loop (just for testing)
             result = {
-                x: [(y, info["score"]) for (x2, y), info in answers.items() if x2 == x]
+                x: [(info["term"], info["score"]) for (x2, _), info in answers.items() if x2 == x]
                 for x in zip(*Q)
             }
 
             print(result)
 
+        # x Values are still tokenized (need to be matches with untokenized Q afterwards)
+        # TODO: there is not 1:1 matching between tokenized and term (how to handle it?)
         return result
 
     # TODO: work with class variables for answers and tables?

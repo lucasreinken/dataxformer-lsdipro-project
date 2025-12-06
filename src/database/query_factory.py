@@ -236,7 +236,13 @@ class QueryFactory:
 
         ###Das hier gibt es genau so bei Val. In eine Funktion packen und da machen lassen? 
         x_selects = [f"p.val_{self.get_prefix(idx, anz_cols_q)}" for idx in range(anz_cols_q)]
-        y_selects = [f"{self.get_prefix(idx+anz_cols_q, anz_cols_q)}.{self.term_token_column}" for idx in range(anz_cols_answer)]
+        y_selects = []
+        for idx in range(anz_cols_answer):
+            alias = self.get_prefix(idx + anz_cols_q, anz_cols_q)
+            y_selects.append(f"{alias}.{self.term_token_column}")
+            y_selects.append(f"{alias}.{self.term_column}")
+
+
         # print(y_selects)
         all_selects = ", ".join(x_selects + y_selects)
 

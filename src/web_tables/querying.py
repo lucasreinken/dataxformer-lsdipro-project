@@ -22,7 +22,11 @@ class WebTableQueryEngine:
             answer_list = self.querry_factory.stable_get_y(index, Q)
             if answer_list:
                 answer_list = [
-                    [answer[:len_x], answer[len_x:-1]]
+                    [
+                        answer[:len_x],
+                        answer[len_x:-1][::2],
+                        answer[len_x:-1][1::2],
+                    ]
                     for answer in answer_list
                 ]
                 yield index[0], answer_list
