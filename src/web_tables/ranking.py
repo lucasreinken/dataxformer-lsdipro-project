@@ -3,13 +3,16 @@ from src.web_tables.querying import WebTableQueryEngine
 from src.config import get_default_querying_config
 
 class WebTableRanker:
-    def __init__(self, config):
+    def __init__(self, config, tau=None):
 
         self.epsilon = config.epsilon
         self.alpha = config.alpha
         self.max_iterations = config.max_iterations
+        self.table_prior = config.table_prior
 
         querying_config = get_default_querying_config()
+        if tau:
+            querying_config.tau = tau
         self.query_engine = WebTableQueryEngine(querying_config)
 
     def score(self, candidates, query_context):
@@ -137,9 +140,9 @@ class WebTableRanker:
                     unseen_x += best_score
 
             # TODO: get it from the tables_table vertica (or from config for all)
-            table_prior = 0.5
+            # table_prior = 0.5
 
-            table_score = self.alpha * ((table_prior * good) / (table_prior * good + (1-table_prior) * (bad + unseen_x)))
+            table_score = self.alpha * ((self.table_prior * good) / (self.table_prior * good + (1-self.table_prior) * (bad + unseen_x)))
 
             # remove
             # print(f'Score of table {table_id}: {table_score}')

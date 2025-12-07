@@ -19,6 +19,7 @@ class RankingConfig:
     epsilon = 0.001
     alpha = 0.99
     max_iterations = float('inf')
+    table_prior = 0.5
 
 @dataclass
 class VerticaConfig:

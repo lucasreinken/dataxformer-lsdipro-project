@@ -127,17 +127,69 @@ with col4:
     )
 
 st.write("")
-tau_col1, tau_col2 = st.columns([2, 6])
-with tau_col1:
+col_tau, col_eps, col_table_prior, col_maxiter, _ = st.columns(5)
+
+with col_tau:
     tau = st.number_input(
-        "Tau Threshold",
-        min_value=1.0,
-        max_value=5.0,
-        value=1.0,
-        step=1.0,
-        key='input_tau',
+        "Tau",
+        min_value=1,
+        max_value=100,
+        value=2,
+        step=1,
+        key="input_tau",
         help="Threshold value for similarity matching"
     )
+
+with col_eps:
+    epsilon = st.number_input(
+        "Epsilon",
+        min_value=0.0,
+        max_value=1000.0,
+        value=0.001,
+        step=0.0001,
+        format="%.4f",
+        key="input_epsilon",
+        help="Minimum answer probabilites change required between iterations before stopping (convergence tolerance)"
+    )
+
+with col_table_prior:
+    table_prior = st.number_input(
+        "Tables prior",
+        min_value=0.00,
+        max_value=1.00,
+        value=0.50,
+        step=0.01,
+        format="%.2f",
+        key="input_tp",
+        help="Inital assumption about overall table dirtiness (lower value = dirtier tables)"
+    )
+
+with col_maxiter:
+    c1, c2 = st.columns([4, 1])
+
+    with c2:
+        st.write("")
+        st.write("")
+        infinite = st.checkbox(
+            label = "∞",
+            key="maxiter_inf",
+            value=True
+        )
+
+    with c1:
+        max_iterations = st.number_input(
+            "Max Iterations",
+            min_value=1,
+            max_value=1000,
+            value=10,
+            step=1,
+            key="input_max_iterations",
+            disabled=infinite,
+            help="Upper limit on the number of quering iterations (infinite = until converged)"
+        )
+
+    if infinite:
+        max_iterations = float("inf")
 
 with col5:
     st.write("")
@@ -257,7 +309,9 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
         # tokenized_querries  = query_x_lists
         tau = st.session_state.input_tau
 
-        ##Init of Algorithm 
+        ##Init of Algorithm
+
+        # TODO: initialize it once at the beginning
         config = get_default_vertica_config()
         qf = QueryFactory(config)
 
@@ -273,7 +327,10 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
         # answers = qf.stable_get_y(next(iter(erg)), tokenized_querries) ###Erwartet Tuple, keine Liste. Erg ist eine Liste von Tuplen! 
 
         ranking_config = get_default_ranking_config()
-        ranker = WebTableRanker(ranking_config)
+        ranking_config.table_prior = table_prior
+        ranking_config.epsilon = epsilon
+        ranking_config.max_iterations = max_iterations
+        ranker = WebTableRanker(ranking_config, tau)
 
         # TODO: generator to print out the current believe (and stop button)
         print("Starting EM algorithm!")
