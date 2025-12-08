@@ -1,6 +1,7 @@
 import sys
 import os
 import ast
+import io
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(current_dir)
@@ -88,46 +89,147 @@ def submit_all_data():
 
 st.header("Table Configuration")
 
-col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 2])
+mode = st.radio(
+    "Configuration mode",
+    ["Manual", "CSV upload"],
+    horizontal=True,
+)
 
-with col1:
-    num_x_cols = st.number_input(
-        "Amount of X Columns",
-        min_value=1,
-        max_value=10,
-        value=st.session_state.num_x_cols,
-        key='input_x_cols'
+if mode == "Manual":
+
+    col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 2])
+
+    with col1:
+        num_x_cols = st.number_input(
+            "Amount of X Columns",
+            min_value=1,
+            max_value=10,
+            value=st.session_state.num_x_cols,
+            key='input_x_cols'
+        )
+
+    with col2:
+        num_y_cols = st.number_input(
+            "Amount of Y Columns",
+            min_value=1,
+            max_value=10,
+            value=st.session_state.num_y_cols,
+            key='input_y_cols'
+        )
+
+    with col3:
+        num_training_rows = st.number_input(
+            "Training Rows",
+            min_value=1,
+            max_value=100,
+            value=st.session_state.num_training_rows,
+            key='input_training_rows'
+        )
+
+    with col4:
+        num_query_rows = st.number_input(
+            "Query Rows",
+            min_value=1,
+            max_value=100,
+            value=st.session_state.num_query_rows,
+            key='input_query_rows'
+        )
+
+    with col5:
+        st.write("")
+        st.write("")
+        if st.button("Create Tables", type="primary"):
+            st.session_state.num_x_cols = num_x_cols
+            st.session_state.num_y_cols = num_y_cols
+            st.session_state.num_training_rows = num_training_rows
+            st.session_state.num_query_rows = num_query_rows
+            configure_tables()
+            st.rerun()
+
+elif mode == "CSV upload":
+        
+    uploaded = st.file_uploader(
+        "Upload CSV",
+        type=["csv"],
+        accept_multiple_files=False,
+        help="Upload a comma- or semicolon-separated CSV file with missing values"
     )
 
-with col2:
-    num_y_cols = st.number_input(
-        "Amount of Y Columns",
-        min_value=1,
-        max_value=10,
-        value=st.session_state.num_y_cols,
-        key='input_y_cols'
+    has_header = st.checkbox(
+        "First row contains column names",
+        value=True,
+        help="Disable if your file has no header row (columns will be numbered)",
+        key="csv_has_header",
     )
 
-with col3:
-    num_training_rows = st.number_input(
-        "Training Rows",
-        min_value=1,
-        max_value=100,
-        value=st.session_state.num_training_rows,
-        key='input_training_rows'
-    )
+    x_selected = []
+    y_selected = []
 
-with col4:
-    num_query_rows = st.number_input(
-        "Query Rows",
-        min_value=1,
-        max_value=100,
-        value=st.session_state.num_query_rows,
-        key='input_query_rows'
-    )
+    if uploaded is not None:
+        raw = uploaded.read().decode("utf-8")
+        sample = raw[:2000]
+        delimiter = "," if sample.count(",") > sample.count(";") else ";"
+
+        uploaded_df = pd.read_csv(
+            io.StringIO(raw),
+            delimiter=delimiter,
+            header=0 if has_header else None,
+        )
+
+        st.session_state["uploaded_df"] = uploaded_df
+
+        if has_header:
+            all_cols = list(uploaded_df.columns)
+            display_options = all_cols
+        else:
+            all_cols = list(range(uploaded_df.shape[1]))
+            display_options = [i for i in all_cols]
+
+        x_selected = st.session_state.get("csv_x_cols", [])
+        y_selected = st.session_state.get("csv_y_cols", [])
+
+        x_options = [o for o in display_options if o not in y_selected]
+
+        y_options = [o for o in display_options if o not in x_selected]
+
+        col_x, col_y = st.columns(2)
+
+        with col_x:
+            x_selected = st.multiselect(
+                "X columns",
+                options=x_options,
+                default=[v for v in x_selected if v in x_options],
+                help="Select one or more feature/input columns.",
+                key="csv_x_cols",
+            )
+
+        with col_y:
+            y_selected = st.multiselect(
+                "Y columns",
+                options=y_options,
+                default=[v for v in y_selected if v in y_options],
+                help="Select one or more target/output columns.",
+                key="csv_y_cols",
+            )
+
+        st.session_state["X_columns"] = x_selected
+        st.session_state["Y_columns"] = y_selected
+
+    if uploaded is not None:
+
+        st.success(f"Sucessfully loaded!")
+        uploaded_df = st.session_state["uploaded_df"]
+        st.dataframe(uploaded_df, width='stretch')
+        st.session_state.data_submitted = True
+
+st.header("Hyperparameter Configuration")
 
 st.write("")
-col_tau, col_eps, col_table_prior, col_maxiter, _ = st.columns(5)
+
+if mode == "Manual":
+    col_tau, col_eps, col_table_prior, col_maxiter, _ = st.columns(5)
+else:
+    col_tau, col_eps, col_table_prior, col_maxiter = st.columns(4)
 
 with col_tau:
     tau = st.number_input(
@@ -191,16 +293,55 @@ with col_maxiter:
     if infinite:
         max_iterations = float("inf")
 
-with col5:
-    st.write("")
-    st.write("")
-    if st.button("Create Tables", type="primary"):
-        st.session_state.num_x_cols = num_x_cols
-        st.session_state.num_y_cols = num_y_cols
-        st.session_state.num_training_rows = num_training_rows
-        st.session_state.num_query_rows = num_query_rows
-        configure_tables()
-        st.rerun()
+if mode == "CSV upload":
+    if st.session_state.data_submitted:
+        x_valid = st.session_state.get("X_columns") and len(st.session_state["X_columns"]) >= 1
+        y_valid = st.session_state.get("Y_columns") and len(st.session_state["Y_columns"]) >= 1
+
+        uploaded_df = st.session_state.uploaded_df
+
+        disabled = not (x_valid and y_valid)
+
+        st.write("")
+        st.write("")
+
+        if st.button("🚀 START PROCESSING", type="primary", width="stretch", disabled=disabled):
+            submitted_x = [[] for _ in x_selected]
+            submitted_y = [[] for _ in y_selected]
+            submitted_queries = [[] for _ in x_selected]
+
+            for _, row in uploaded_df.iterrows():
+                x_vals = [row[c] for c in x_selected]
+                y_vals = [row[c] for c in y_selected]
+
+                x_all_valid = all(v is not None and not pd.isna(v) for v in x_vals)
+                y_all_valid = all(v is not None and not pd.isna(v) for v in y_vals)
+                y_all_none  = all(v is None or pd.isna(v) for v in y_vals)
+
+                if x_all_valid and y_all_valid:
+
+                    for i, v in enumerate(x_vals):
+                        submitted_x[i].append(str(v))
+
+                    for i, v in enumerate(y_vals):
+                        submitted_y[i].append(str(v))
+
+                elif x_all_valid and y_all_none:
+
+                    for i, v in enumerate(x_vals):
+                        submitted_queries[i].append(str(v))
+                        
+            st.session_state.submitted_x = submitted_x
+            st.session_state.submitted_y = submitted_y
+            st.session_state.submitted_queries = submitted_queries
+
+            st.session_state.num_x_cols = len(x_selected)
+            st.session_state.num_y_cols = len(y_selected)
+            st.session_state.num_training_rows = len(submitted_x[0])
+            st.session_state.num_query_rows = len(submitted_queries[0])
+            st.session_state.start_processing = True
+            st.session_state.results_available = False
+            st.rerun()
 
 if st.session_state.tables_configured:
     st.write("---")
@@ -465,6 +606,37 @@ if 'results_available' in st.session_state and st.session_state.results_availabl
 
         updated_df = pd.DataFrame(new_rows)
         csv = updated_df.to_csv(index=False, header=False)
+
+        if mode == "CSV upload":
+            x_selected = st.session_state.X_columns
+            y_selected = st.session_state.Y_columns
+
+            selected = x_selected + y_selected
+
+            uploaded_df = st.session_state.uploaded_df
+
+            rename_dict = dict()
+            for i, column in enumerate(selected):
+                rename_dict[i] = column
+
+            updated_df.rename(columns=rename_dict, inplace=True)
+
+            for col in selected:
+                updated_df[col] = updated_df[col].astype(uploaded_df[col].dtype)
+
+
+            updated_df = uploaded_df.merge(
+                updated_df,
+                on=x_selected,
+                how="left",
+                suffixes=("", "_new"),
+            )
+
+            for y in y_selected:
+                updated_df[str(y)] = updated_df[str(y)].fillna(updated_df[f"{y}_new"])
+                updated_df.drop(columns=[f"{y}_new"], inplace=True)
+
+            csv = updated_df.to_csv(index=False, header=st.session_state["csv_has_header"])
 
         st.success("Selected Answers Saved!")
 
