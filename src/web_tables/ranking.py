@@ -67,13 +67,13 @@ class WebTableRanker:
                     y_values = [list(row) for row in zip(*y_cols)]
 
                 for table_id, answer_list in self.query_engine.find_answers(x_values, y_values, query_values):
-                    # TODO: what about None values etc.???
                     for answer in answer_list:
                         if None in answer[1]:
                             continue
                         y_term = tuple(answer[2])
                         answer = (tuple(answer[0]), tuple(answer[1]))
                         if answer not in answers:
+                            # TODO: just if a real answer was found (not examples)
                             finished_querying = False
                             answers[answer] = {"score": 0.0, "tables": set(), "term": y_term}
 
