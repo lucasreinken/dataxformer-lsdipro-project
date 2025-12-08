@@ -1,5 +1,6 @@
 import sys
 import os
+import ast
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(current_dir)
@@ -10,9 +11,13 @@ if root_dir not in sys.path:
 import streamlit as st
 import pandas as pd
 from src.web_tables.indexing import WebTableIndexer
+from src.web_tables.ranking import WebTableRanker
 from src.config import IndexingConfig as cnf
-from src.config import get_default_vertica_config
-from src.database.Querry_Factory import QuerryFactory
+from src.config import (
+    get_default_vertica_config,
+    get_default_ranking_config
+)
+from src.database.query_factory import QueryFactory
 
 indexer = WebTableIndexer(cnf)
 
@@ -34,6 +39,8 @@ if 'num_query_rows' not in st.session_state:
     st.session_state.num_query_rows = 2
 if 'data_submitted' not in st.session_state:
     st.session_state.data_submitted = False
+if 'results_available' not in st.session_state:
+    st.session_state.results_available = False
 
 def configure_tables():
     st.session_state.tables_configured = True
@@ -58,6 +65,8 @@ def submit_all_data():
     training_x_lists = []
     training_y_lists = []
     query_x_lists = []
+
+    st.session_state.results_available = False
     
     for i in range(st.session_state.num_x_cols):
         col_name = f'X{i+1}'
@@ -118,17 +127,69 @@ with col4:
     )
 
 st.write("")
-tau_col1, tau_col2 = st.columns([2, 6])
-with tau_col1:
+col_tau, col_eps, col_table_prior, col_maxiter, _ = st.columns(5)
+
+with col_tau:
     tau = st.number_input(
-        "Tau Threshold",
-        min_value=1.0,
-        max_value=5.0,
-        value=1.0,
-        step=1.0,
-        key='input_tau',
+        "Tau",
+        min_value=1,
+        max_value=100,
+        value=2,
+        step=1,
+        key="input_tau",
         help="Threshold value for similarity matching"
     )
+
+with col_eps:
+    epsilon = st.number_input(
+        "Epsilon",
+        min_value=0.0,
+        max_value=1000.0,
+        value=0.001,
+        step=0.0001,
+        format="%.4f",
+        key="input_epsilon",
+        help="Minimum answer probabilites change required between iterations before stopping (convergence tolerance)"
+    )
+
+with col_table_prior:
+    table_prior = st.number_input(
+        "Tables prior",
+        min_value=0.00,
+        max_value=1.00,
+        value=0.50,
+        step=0.01,
+        format="%.2f",
+        key="input_tp",
+        help="Inital assumption about overall table dirtiness (lower value = dirtier tables)"
+    )
+
+with col_maxiter:
+    c1, c2 = st.columns([4, 1])
+
+    with c2:
+        st.write("")
+        st.write("")
+        infinite = st.checkbox(
+            label = "∞",
+            key="maxiter_inf",
+            value=True
+        )
+
+    with c1:
+        max_iterations = st.number_input(
+            "Max Iterations",
+            min_value=1,
+            max_value=1000,
+            value=10,
+            step=1,
+            key="input_max_iterations",
+            disabled=infinite,
+            help="Upper limit on the number of quering iterations (infinite = until converged)"
+        )
+
+    if infinite:
+        max_iterations = float("inf")
 
 with col5:
     st.write("")
@@ -219,6 +280,7 @@ if st.session_state.tables_configured:
         if st.session_state.data_submitted:
             if st.button("🚀 START PROCESSING", type="primary", width="stretch"):
                 st.session_state.start_processing = True
+                st.session_state.results_available = False
                 st.rerun()
 
 
@@ -242,44 +304,97 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
         cleaned_x_lists     = [indexer.tokenize_list(col) for col in x_lists]
         cleaned_y_lists     = [indexer.tokenize_list(col) for col in y_lists]
         tokenized_querries  = [indexer.tokenize_list(col) for col in query_x_lists]
+        # cleaned_x_lists     = x_lists
+        # cleaned_y_lists     = y_lists
+        # tokenized_querries  = query_x_lists
         tau = st.session_state.input_tau
 
-        ##Init of Algorithm 
+        ##Init of Algorithm
+
+        # TODO: initialize it once at the beginning
         config = get_default_vertica_config()
-        qf = QuerryFactory(config)
+        qf = QueryFactory(config)
 
 
         ##Logic
-        print("Start 1")
-        z = qf.find_xy_candidates(cleaned_x_lists, cleaned_y_lists, tau)        ###Warum werden die denn in einer unterschiedlichen Reihenfolge je nach itteration angezeigt. 
-        print("Finish")                                                         ###Ist der Prozess nicht deterministisch? Liegt das am Kernel und Parallel Processing? 
-        erg = qf.stable_row_val(z, cleaned_x_lists, cleaned_y_lists, tau)
-        print("Done with erg")
-        st.subheader("All Direct Tables")
-        st.write(erg)
-        answers = qf.stable_get_y(next(iter(erg)), tokenized_querries) ###Erwartet Tuple, keine Liste. Erg ist eine Liste von Tuplen! 
+        # print("Start 1")
+        # z = qf.find_xy_candidates(cleaned_x_lists, cleaned_y_lists, tau)        ###Warum werden die denn in einer unterschiedlichen Reihenfolge je nach itteration angezeigt. 
+        # print("Finish")                                                         ###Ist der Prozess nicht deterministisch? Liegt das am Kernel und Parallel Processing? 
+        # erg = qf.stable_row_val(z, cleaned_x_lists, cleaned_y_lists, tau)
+        # print("Done with erg")
+        # st.subheader("All Direct Tables")
+        # st.write(erg)
+        # answers = qf.stable_get_y(next(iter(erg)), tokenized_querries) ###Erwartet Tuple, keine Liste. Erg ist eine Liste von Tuplen! 
 
+        ranking_config = get_default_ranking_config()
+        ranking_config.table_prior = table_prior
+        ranking_config.epsilon = epsilon
+        ranking_config.max_iterations = max_iterations
+        ranker = WebTableRanker(ranking_config, tau)
 
+        # TODO: generator to print out the current believe (and stop button)
+        print("Starting EM algorithm!")
+        answers = ranker.expectation_maximization(cleaned_x_lists, cleaned_y_lists, tokenized_querries)
 
+        if answers:
 
+            rows = []
+            for idx, query in enumerate(zip(*tokenized_querries), 1):
+                 
+                    row_dict = {}
+                    
+                    row_dict['Query #'] = idx
+
+                    # TODO: do it with real x values (not tokenized)
+                    num_x = st.session_state.num_x_cols
+                    for i in range(num_x):
+                        row_dict[f'X{i+1}'] = query[i]
+
+                    candidates = answers[query]
+
+                    candidates_sorted = sorted(candidates, key=lambda x: x[1], reverse=True)
+
+                    candidates_sorted = [candidate for candidate in candidates_sorted if candidate[1] >= 0.01]
+
+                    row_dict["Y_candidates"] = [f"{candidate[0]} ({candidate[1]:.2f})" for candidate in candidates_sorted]
+
+                    if candidates_sorted: 
+                        row_dict["Y_selected"] = f"{candidates_sorted[0][0]} ({candidates_sorted[0][1]:.2f})"
+                    else:
+                        row_dict["Y_selected"] = None
+                    
+                    rows.append(row_dict)
+
+            df_results = pd.DataFrame(rows)
+
+            st.session_state.df_results = df_results
+
+            st.session_state.results_available = True
+            st.success("Processing Complete!")
+            st.rerun()
+
+        else:
+            st.warning("No answers found")
+
+        
 
 
         ##Erster Querry für Multi-Hop. Collected alle T_x 
         
-        multi_z = qf.find_xy_candidates(cleaned_x_lists, None, tau, True)
-        st.subheader("Multi-Hop Tables")
-        st.write(multi_z)
+        # multi_z = qf.find_xy_candidates(cleaned_x_lists, None, tau, True)
+        # st.subheader("Multi-Hop Tables")
+        # st.write(multi_z)
 
-        erg_set = set(Index[0] for Index in erg)
+        # erg_set = set(Index[0] for Index in erg)
 
-        clean = list()
-        for Multi_IDX in multi_z: 
-            Table_ID, *_ = Multi_IDX
-            if Table_ID not in erg_set: 
-                clean.append(Table_ID) #####jaja, verlust von Col_ids, aber das hier ist nur ein Test 
+        # clean = list()
+        # for Multi_IDX in multi_z: 
+        #     Table_ID, *_ = Multi_IDX
+        #     if Table_ID not in erg_set: 
+        #         clean.append(Table_ID) #####jaja, verlust von Col_ids, aber das hier ist nur ein Test 
         
-        st.subheader("T_X <- T_X/T_E")
-        st.write(clean)
+        # st.subheader("T_X <- T_X/T_E")
+        # st.write(clean)
 
 
         ####Das hier muss alles überarbeitet werden, muss in eigene Datei "Logic" oder "Pipeline"
@@ -292,50 +407,73 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
 
 
         ###Visualisation of Results
-        st.subheader("Results")
-            
-        if answers:
 
-            rows = []
-            for idx, answer_tuple in enumerate(answers):
-                if answer_tuple:  
-                    row_dict = {}
-                    
-                    row_dict['Query #'] = idx + 1
+if 'results_available' in st.session_state and st.session_state.results_available:
+    st.write("---")
+    st.subheader("Results")
 
-                    tuple_data = list(answer_tuple)
+    df_results = st.session_state.df_results
+    num_x_cols = st.session_state.num_x_cols
+    num_y_cols = st.session_state.num_y_cols
 
-                    num_x = st.session_state.num_x_cols
-                    for i in range(min(num_x, len(tuple_data))):
-                        row_dict[f'X{i+1}'] = tuple_data[i]
+    submitted = False
+    
+    if not df_results.empty:
+        new_rows = []
+        header_cols = st.columns([1] * num_x_cols + [(num_x_cols + 1)])
 
-                    num_y = st.session_state.num_y_cols
-                    for i in range(num_y):
-                        if num_x + i < len(tuple_data):
-                            row_dict[f'Y{i+1}'] = tuple_data[num_x + i]
-                    
-                    if len(tuple_data) > num_x + num_y:
-                        row_dict['Frequency'] = tuple_data[num_x + num_y]
-                    
-                    rows.append(row_dict)
-            
-            if rows:
-                df_results = pd.DataFrame(rows)
-                st.dataframe(df_results, width="stretch", hide_index=True)
-                
-                csv = df_results.to_csv(index=False)
-                st.download_button(
-                    label="Download as CSV",
-                    data=csv,
-                    file_name="query_results.csv",
-                    mime="text/csv"
-                )
+        for j in range(num_x_cols):
+            with header_cols[j]:
+                st.markdown(f"**X{j+1}**")
+
+        with header_cols[-1]:
+            st.markdown("**Answer selection** (Answer, Probability)")
+        with st.form("results_table"):
+
+            for i, row in df_results.iterrows():
+                cols = st.columns([1] * num_x_cols + [(num_x_cols+1)])
+
+                for j in range(num_x_cols):
+                    with cols[j]:
+                        st.write(row[f"X{j+1}"])
+
+                with cols[-1]:
+                    options = row["Y_candidates"] + [None]
+                    selected = st.selectbox(
+                        label="Y Selection",
+                        label_visibility="collapsed",
+                        options=options,
+                        index=options.index(row["Y_selected"]) if row["Y_selected"] in options else None,
+                        key=f"y_select_{i}",
+                    )
+            submitted = st.form_submit_button("Update selections")
+    else:
+        st.warning("No results to display")
+
+    if submitted:
+        for i, row in df_results.iterrows():
+            x_vals = []
+            for j in range(num_x_cols):
+                x_vals.append(row[f"X{j+1}"])
+            selected_answer = st.session_state[f"y_select_{i}"]
+            if selected_answer:
+                selected_answer = selected_answer.rsplit(" (", 1)[0]
+                selected_answer = list(ast.literal_eval(selected_answer))
             else:
-                st.warning("No results to display")
-        else:
-            st.warning("No answers found")
-        
-        st.success("Processing Complete!")
+                selected_answer = [None] * num_y_cols
+            new_rows.append(x_vals + selected_answer)
+
+        updated_df = pd.DataFrame(new_rows)
+        csv = updated_df.to_csv(index=False, header=False)
+
+        st.success("Selected Answers Saved!")
+
+        st.download_button(
+            label="Download as CSV",
+            data=csv,
+            file_name="query_results.csv",
+            mime="text/csv"
+        )
 
 
 ###Example Bill Gates Microsoft line 21 (unser Stemmer stemmed ihn leider als bill gate, token ist aber gates) Mark Zuckerberg Facebook (passt) Steve Ballmer Microsoft 175 Kevin Mitnick Hacker 113
