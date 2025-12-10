@@ -250,3 +250,21 @@ class DirectDependencyVerifier:
                 next_paths.append((merged_df, actual_z_col))
         
         return results, next_paths
+    
+
+
+# Was noch muss: 
+# Furthermore, we check whether the cardinality of the
+# discovered Zi is greater or equal than the corresponding E.Y.
+# If this is not the case, we know apriori that the functional path
+# to the transformation result cannot be maintained.
+
+
+
+# Our strategy to reduce the search space is to require
+# the functional dependency constraint on at least τ of the initial
+# examples throughout the indirection and no contradiction with
+# regard to the given examples, as shown in Algorithm 1
+
+
+# Der muss entlang der Beispiele Querrien, aber die ganzen Tables laden. 
