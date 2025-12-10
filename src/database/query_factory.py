@@ -2,6 +2,7 @@ import os
 import vertica_python
 from dotenv import load_dotenv
 from functools import cache
+import pandas as pd
 
 class QueryFactory:
 
@@ -292,3 +293,30 @@ class QueryFactory:
         with self.conn.cursor() as cur:
             cur.execute(sql, querry_pairs)
             return cur.fetchall()
+
+    def get_table_content(self, table_id: int, include_cols: tuple | list = None) -> pd.DataFrame | None:
+        params = [table_id]
+        where_clause = f"WHERE {self.table_column} = %s"
+        
+        if include_cols:
+            placeholders = ', '.join(['%s'] * len(include_cols))
+            where_clause += f" AND {self.column_column} IN ({placeholders})"
+            params.extend(include_cols)
+
+        sql = f"""
+        SELECT 
+            {self.row_column} as row_id,
+            {self.column_column} as col_id,
+            {self.term_token_column} as val
+        FROM {self.cells_table}  /*+PROJS('public.inv_index_proj')*/
+        {where_clause}
+        """
+        
+        df_raw = pd.read_sql(sql, self.conn, params=params)
+        
+        if df_raw.empty:
+            return None
+
+        df_pivot = df_raw.pivot(index='row_id', columns='col_id', values='val')
+
+        return df_pivot

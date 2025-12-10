@@ -1,4 +1,5 @@
 from copy import deepcopy
+from pprint import pprint
 from src.web_tables.querying import WebTableQueryEngine
 from src.config import get_default_querying_config
 
@@ -51,7 +52,9 @@ class WebTableRanker:
 
         while (delta_score > self.epsilon or not finished_querying) and iteration < self.max_iterations:
             iteration+=1
+            print('')
             print(f'Current EM Iteration: {iteration}')
+            print('')
 
             if not finished_querying:
                 # TODO: do we have to query for all answers again (just because of tau?)
@@ -81,7 +84,8 @@ class WebTableRanker:
                     for answer in answer_list:
                         if None in answer[1]:
                             continue
-                        y_term = tuple(answer[2])
+                        # TODO: change it back somehow to untokenized words
+                        y_term = tuple(answer[1])
                         answer = (tuple(answer[0]), tuple(answer[1]))
                         if answer not in answers:
                             # TODO: just if a real answer was found (not examples)
@@ -110,7 +114,8 @@ class WebTableRanker:
                 for x in zip(*Q)
             }
 
-            print(result)
+            print('')
+            pprint(result)
 
         # x Values are still tokenized (need to be matches with untokenized Q afterwards)
         # TODO: there is not 1:1 matching between tokenized and term (how to handle it?)
@@ -160,12 +165,11 @@ class WebTableRanker:
 
             tables[table_id]["score"] = table_score
 
-        print(tables)
-
         return tables
 
     def update_answer_scores(self, answers, tables, Q):
 
+        print('')
         # TODO: Really set everything to 1 or just the new ones as below???
         for _, info in answers.items():
             info["score"] = 1.0

@@ -8,6 +8,17 @@ root_dir = os.path.dirname(current_dir)
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    message="pandas only supports SQLAlchemy connectable"
+)
+
+warnings.filterwarnings(
+    "ignore",
+    message="TLS is not configured on the server"
+)
+
 
 import streamlit as st
 import pandas as pd
