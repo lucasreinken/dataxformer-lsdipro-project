@@ -445,10 +445,10 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
     
     with st.spinner("Processing data..."):
 
-        ###Da das hier die "Hauptlogik" ist, diese vielleicht in die Main packen und das dann aufrufen?
-        ###Dann müssen wir hier so gut wie nichts ändern und können, zum testen, immer nur den Logik befehl hier drin tauschen. 
+        ##Da das hier die "Hauptlogik" ist, diese vielleicht in die Main packen und das dann aufrufen?
+        ##Dann müssen wir hier so gut wie nichts ändern und können, zum testen, immer nur den Logik befehl hier drin tauschen. 
 
-        ##Collection of Input
+        #Collection of Input
         x_lists = st.session_state.submitted_x
         y_lists = st.session_state.submitted_y
         query_x_lists = st.session_state.submitted_queries
@@ -468,7 +468,7 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
         config = get_default_vertica_config()
         qf = QueryFactory(config)
 
-
+        print(cleaned_x_lists)
         ##Logic
         # print("Start 1")
         # z = qf.find_xy_candidates(cleaned_x_lists, cleaned_y_lists, tau)        ###Warum werden die denn in einer unterschiedlichen Reihenfolge je nach itteration angezeigt. 
@@ -667,10 +667,13 @@ if 'results_available' in st.session_state and st.session_state.results_availabl
         )
 
 
-###Example Bill Gates Microsoft line 21 (unser Stemmer stemmed ihn leider als bill gate, token ist aber gates) Mark Zuckerberg Facebook (passt) Steve Ballmer Microsoft 175 Kevin Mitnick Hacker 113
+###Example Bill Gates Microsoft line 21 (unser Stemmer stemmed ihn leider als bill gate, token ist aber gates) 
+# Mark Zuckerberg Facebook (passt) Steve Ballmer Microsoft 175 Kevin Mitnick Hacker 113
 ###Table 30,440,039
 
 #Q: Bob Frankston? 26 Biz Stone 25
+
+#FD Table Example: 104022866
 
 ##Todo: Check if all Values are Filled in 
 ##Todo: Demo Mode with Predefined Values 
