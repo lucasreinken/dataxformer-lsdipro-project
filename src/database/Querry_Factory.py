@@ -1,5 +1,6 @@
 import os
 import vertica_python
+import pandas as pd
 from dotenv import load_dotenv
 
 class QuerryFactory:
@@ -51,13 +52,15 @@ class QuerryFactory:
             return f"X{idx}"
         else:
             return f"Y{idx - cutoff}"
-        
-    def find_xy_candidates(
+
+    def find_xy_candidates(                     ####Comments müssen in den Docstring 
         self,
-        X_cols: list[list[str]],
-        Y_cols: list[list[str]] | None,
-        tau: int,
-        multi_hop:bool = False,
+        X_cols: list[list[str]],                 ###mandatory input cols
+        Y_cols: list[list[str]] | None,          ###y-cols, only important for dirct search 
+        tau: int,                                ###precision parameter
+        multi_hop:bool = False,                  ###enables the multi-hop szenario, allwoing y_cols to be None
+        limit:int | None = None,                 ###limits the number of tables 
+        previously_seen_tables: set| None = None ### already seen tables get excluded from the search 
         ):
         if multi_hop: 
             Y_cols = list()
@@ -79,7 +82,7 @@ class QuerryFactory:
             col_name = f"{self.get_prefix(idx, anz_x_cols)}"
             col_sql = f"""{col_name} AS (
             SELECT {self.table_column}, {self.column_column}
-            FROM {self.cells_table}
+            FROM {self.cells_table} /*+ PROJS('public.tokenized_proj') */ 
             WHERE {self.term_token_column} IN ({placeholders})
             GROUP BY {self.table_column}, {self.column_column}
             HAVING COUNT(DISTINCT {self.term_token_column}) >= {tau}
@@ -100,18 +103,35 @@ class QuerryFactory:
                 equal_parts.append(f"{col_name}")
 
         unequal_part = list()
-
         
         for idx, col_name in enumerate(Col_names):
             for jdx in range(idx+1, len(Col_names)): 
                 unequal_sql = f"""{col_name}.{self.column_column}<>{Col_names[jdx]}.{self.column_column}"""
                 unequal_part.append(unequal_sql)
 
+
+
+        if previously_seen_tables:
+
+            ignore_list = list(previously_seen_tables)
+            ignore_placeholders = ", ".join(["%s"] * len(ignore_list))
+
+            exclusion_sql = f"""{Col_names[0]}.{self.table_column} NOT IN ({ignore_placeholders})"""
+            unequal_part.append(exclusion_sql)
+
+            params.extend(ignore_list)
+
+
         A_part = f"""WITH \n""" + ", \n".join(Querry)
         B_part = f"""\nSELECT \n{Col_names[0]}.{self.table_column} AS table_id, \n""" + ", \n".join(b_parts)
         C_part = f""" \nFROM """ + "\nJOIN ".join(equal_parts)
         D_part = f"""\nWHERE """ + " \nAND ".join(unequal_part) if unequal_part else """"""
-        sql = A_part + B_part + C_part + D_part + ";"
+        sql_parts = [A_part, B_part, C_part, D_part]
+        
+        if limit:
+            sql_parts.append(f"\nLIMIT {limit}")
+            
+        sql = "".join(sql_parts) + ";"
 
         print(sql)
         print(params)
@@ -119,8 +139,8 @@ class QuerryFactory:
         with self.conn.cursor() as cur:
             cur.execute(sql, params)
             return cur.fetchall() 
-
     
+
 
     def stable_row_val(self, index_list:list, X_lists:list[list[tuple]], Y_lists:list[list[tuple]], tau:int): 
         
@@ -261,9 +281,6 @@ class QuerryFactory:
             join_sql = f"JOIN {self.cells_table} {alias} ON {' AND '.join(conditions)}"
             joins.append(join_sql)
 
-
-
-
         sql = f'''
         WITH Inputs ({", ".join([f"val_{self.get_prefix(idx, anz_cols_q)}" for idx in range(anz_cols_q)])}) AS (
             {joined_input_selects}
@@ -284,3 +301,35 @@ class QuerryFactory:
         with self.conn.cursor() as cur:
             cur.execute(sql, querry_pairs)
             return cur.fetchall()
+        
+
+
+    
+    def get_table_content(self, table_id: int, include_cols: tuple | list = None) -> pd.DataFrame | None:
+        params = [table_id]
+        where_clause = f"WHERE {self.table_column} = %s"
+        
+        if include_cols:
+            placeholders = ', '.join(['%s'] * len(include_cols))
+            where_clause += f" AND {self.column_column} IN ({placeholders})"
+            params.extend(include_cols)
+
+        sql = f"""
+        SELECT 
+            {self.row_column} as row_id,
+            {self.column_column} as col_id,
+            {self.term_token_column} as val
+        FROM {self.cells_table} /*+ PROJS('public.inv_index_proj') */
+        {where_clause}
+        """
+        
+        df_raw = pd.read_sql(sql, self.conn, params=params)
+        
+        if df_raw.empty:
+            return None
+        
+        print(sql)
+        print(params)
+
+        df_pivot = df_raw.pivot(index='row_id', columns='col_id', values='val')
+        return df_pivot

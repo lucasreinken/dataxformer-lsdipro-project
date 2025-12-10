@@ -7,12 +7,19 @@ if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
 
+import warnings
+
+warnings.filterwarnings('ignore', message='.*pandas only supports SQLAlchemy connectable.*')
+
+
 import streamlit as st
 import pandas as pd
 from src.web_tables.indexing import WebTableIndexer
 from src.config import IndexingConfig as cnf
 from src.config import get_default_vertica_config
 from src.database.Querry_Factory import QuerryFactory
+
+from src.database.direct_FD import DirectDependencyVerifier
 
 indexer = WebTableIndexer(cnf)
 
@@ -230,10 +237,10 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
     
     with st.spinner("Processing data..."):
 
-        ###Da das hier die "Hauptlogik" ist, diese vielleicht in die Main packen und das dann aufrufen?
-        ###Dann müssen wir hier so gut wie nichts ändern und können, zum testen, immer nur den Logik befehl hier drin tauschen. 
+        ##Da das hier die "Hauptlogik" ist, diese vielleicht in die Main packen und das dann aufrufen?
+        ##Dann müssen wir hier so gut wie nichts ändern und können, zum testen, immer nur den Logik befehl hier drin tauschen. 
 
-        ##Collection of Input
+        #Collection of Input
         x_lists = st.session_state.submitted_x
         y_lists = st.session_state.submitted_y
         query_x_lists = st.session_state.submitted_queries
@@ -248,50 +255,25 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
         config = get_default_vertica_config()
         qf = QuerryFactory(config)
 
-
+        print(cleaned_x_lists)
         ##Logic
-        print("Start 1")
+        print("Start 2")
         z = qf.find_xy_candidates(cleaned_x_lists, cleaned_y_lists, tau)        ###Warum werden die denn in einer unterschiedlichen Reihenfolge je nach itteration angezeigt. 
-        print("Finish")                                                         ###Ist der Prozess nicht deterministisch? Liegt das am Kernel und Parallel Processing? 
+        print("Finish")           
+        print(len(z))                                              ###Ist der Prozess nicht deterministisch? Liegt das am Kernel und Parallel Processing? 
         erg = qf.stable_row_val(z, cleaned_x_lists, cleaned_y_lists, tau)
         print("Done with erg")
-        st.subheader("All Direct Tables")
-        st.write(erg)
+        # st.subheader("All Direct Tables")
+        #st.write(erg)
         answers = qf.stable_get_y(next(iter(erg)), tokenized_querries) ###Erwartet Tuple, keine Liste. Erg ist eine Liste von Tuplen! 
 
+        dv = DirectDependencyVerifier(qf)
 
+        aaa = dv.my_queue(erg, cleaned_x_lists, cleaned_y_lists, tau, max_path_len= 2, max_tables = 5)
 
+        st.write(aaa)
 
-
-
-        ##Erster Querry für Multi-Hop. Collected alle T_x 
-        
-        multi_z = qf.find_xy_candidates(cleaned_x_lists, None, tau, True)
-        st.subheader("Multi-Hop Tables")
-        st.write(multi_z)
-
-        erg_set = set(Index[0] for Index in erg)
-
-        clean = list()
-        for Multi_IDX in multi_z: 
-            Table_ID, *_ = Multi_IDX
-            if Table_ID not in erg_set: 
-                clean.append(Table_ID) #####jaja, verlust von Col_ids, aber das hier ist nur ein Test 
-        
-        st.subheader("T_X <- T_X/T_E")
-        st.write(clean)
-
-
-        ####Das hier muss alles überarbeitet werden, muss in eigene Datei "Logic" oder "Pipeline"
-        # EM, Multihop etc. fehlen noch hier 
-
-
-        # ####Hier EM und itterativ. Multi erst hier nach? Erst starten, wenn normales nicht für alle x in Q 
-        # ####ein Ergebnis gebracht hat? 
-
-
-
-        ###Visualisation of Results
+        ##Visualisation of Results
         st.subheader("Results")
             
         if answers:
@@ -338,10 +320,13 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
         st.success("Processing Complete!")
 
 
-###Example Bill Gates Microsoft line 21 (unser Stemmer stemmed ihn leider als bill gate, token ist aber gates) Mark Zuckerberg Facebook (passt) Steve Ballmer Microsoft 175 Kevin Mitnick Hacker 113
+###Example Bill Gates Microsoft line 21 (unser Stemmer stemmed ihn leider als bill gate, token ist aber gates) 
+# Mark Zuckerberg Facebook (passt) Steve Ballmer Microsoft 175 Kevin Mitnick Hacker 113
 ###Table 30,440,039
 
 #Q: Bob Frankston? 26 Biz Stone 25
+
+#FD Table Example: 104022866
 
 ##Todo: Check if all Values are Filled in 
 ##Todo: Demo Mode with Predefined Values 
