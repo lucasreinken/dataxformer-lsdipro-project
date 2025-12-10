@@ -32,15 +32,22 @@ class WebTableRanker:
         answers = {
             (tuple(col_x), tuple(col_y)): {"score": 1.0, "tables": set(), "term": None}
             for col_x, col_y in zip(zip(*X), zip(*Y))
+            if None not in col_x and None not in col_y
         }
         # TODO: add Jaccard Similiratity (if labels provided)
         tables = {}
+
+        q_cols = list({tuple(col) for col in zip(*Q) if None not in col})
+
+        Q = [list(row) for row in zip(*q_cols)]
 
         finished_querying = False
         old_answers = None
         delta_score = float('inf')
 
         iteration = 0
+
+        old_erg = set()
 
         while (delta_score > self.epsilon or not finished_querying) and iteration < self.max_iterations:
             iteration+=1
@@ -66,7 +73,11 @@ class WebTableRanker:
                     x_values = [list(row) for row in zip(*x_cols)]
                     y_values = [list(row) for row in zip(*y_cols)]
 
-                for table_id, answer_list in self.query_engine.find_answers(x_values, y_values, query_values):
+                erg = self.query_engine.find_columns(x_values, y_values)
+                indexes = erg - old_erg
+                old_erg = deepcopy(erg)
+
+                for table_id, answer_list in self.query_engine.find_answers(indexes, query_values):
                     for answer in answer_list:
                         if None in answer[1]:
                             continue

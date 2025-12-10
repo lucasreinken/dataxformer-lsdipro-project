@@ -11,6 +11,22 @@ from src.database import VerticaClient
 
 def main():
 
+    config = get_default_indexing_config()
+
+    tokenizer = WebTableIndexer(config)
+
+    print(tokenizer.tokenize("Paris"))
+    print(tokenizer.tokenize("Warschau"))
+    print(tokenizer.tokenize("Larry"))
+    print(tokenizer.tokenize("harri"))
+    print(tokenizer.tokenize("U+*~0041"))
+
+    print(tokenizer.tokenize("Peter   Thomas MÜLLER"))
+
+    print(tokenizer.tokenize("there"))
+
+    print(tokenizer.tokenize("the best"))
+
     X = [[
     "ord", "dfw", "atl", "mia", "bos",
     "yyz", "yvr", "yul",

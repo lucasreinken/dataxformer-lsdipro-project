@@ -12,11 +12,20 @@ class WebTableQueryEngine:
         vertica_config = get_default_vertica_config()
         self.querry_factory = QueryFactory(vertica_config)
 
-    def find_answers(self, X: list[str], Y: list[str], Q: list[str]):
+    def find_columns(self, X: list[str], Y: list[str]):
         z = self.querry_factory.find_xy_candidates(X, Y, self.tau)
-        erg = self.querry_factory.stable_row_val(z, X, Y, self.tau)
+        erg = set(self.querry_factory.stable_row_val(z, X, Y, self.tau))
 
-        len_x = len(X)
+        return erg
+
+    def find_answers(self, erg, Q: list[str]):
+
+        print(erg)
+
+        len_x = len(Q)
+        Q = tuple(tuple(q) for q in Q)
+
+        print(erg)
 
         for index in erg:
             answer_list = self.querry_factory.stable_get_y(index, Q)

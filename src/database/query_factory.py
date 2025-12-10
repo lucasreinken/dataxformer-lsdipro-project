@@ -1,6 +1,7 @@
 import os
 import vertica_python
 from dotenv import load_dotenv
+from functools import cache
 
 class QueryFactory:
 
@@ -207,8 +208,8 @@ class QueryFactory:
 
 
 
-
-    def stable_get_y(self, idx: tuple, Querries: list[list]): 
+    @cache
+    def stable_get_y(self, idx: tuple, Querries: tuple): 
 
         ###Soll er lieber Tokens oder die originalen Werte zurückgeben? Für den Join würde ersteres natürlich mehr Sinn ergeben. Bool Val einfügen um beides zu ermöglichen? 
         # print(f"Querries: {Querries}")

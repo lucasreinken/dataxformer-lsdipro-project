@@ -18,22 +18,28 @@ from typing import Iterable, Iterator
 
 # BREAK IT DOWN INTO TOKENIZER CLASS AND OTHER FUNCTIONS (LIKE CREATE_PROJECTIONS)?
 
+class NoOpStemmer:
+    def stem(self, x):
+        return x
+
 class WebTableIndexer:
     def __init__(self, config):
         # Known stemmers
         stemmer_map = {
             "porter": PorterStemmer,
         }
-        #### Unnötig. Es gibt nur einen.
 
-        # Validate + construct the stemmer
-        if config.stemmer not in stemmer_map:
-            raise ValueError(
-                f'Unknown stemmer: {config.stemmer}.'
-                f'Available options: {list(stemmer_map.keys())}'
-            )
+        if config.stemmer is None:
+            self.stemmer = NoOpStemmer()
+        else:
+            # Validate + construct the stemmer
+            if config.stemmer not in stemmer_map:
+                raise ValueError(
+                    f'Unknown stemmer: {config.stemmer}.'
+                    f'Available options: {list(stemmer_map.keys())}'
+                )
 
-        self.stemmer = stemmer_map[config.stemmer]()
+            self.stemmer = stemmer_map[config.stemmer]()
 
         # Stem stopwords if present
         # TODO: Stem here?

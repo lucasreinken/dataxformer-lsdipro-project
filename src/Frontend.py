@@ -13,13 +13,14 @@ import streamlit as st
 import pandas as pd
 from src.web_tables.indexing import WebTableIndexer
 from src.web_tables.ranking import WebTableRanker
-from src.config import IndexingConfig as cnf
 from src.config import (
+    get_default_indexing_config,
     get_default_vertica_config,
     get_default_ranking_config
 )
 from src.database.query_factory import QueryFactory
 
+cnf = get_default_indexing_config()
 indexer = WebTableIndexer(cnf)
 
 st.set_page_config(page_title="Frontend", layout="wide")
@@ -166,7 +167,7 @@ elif mode == "CSV upload":
     y_selected = []
 
     if uploaded is not None:
-        raw = uploaded.read().decode("utf-8")
+        raw = uploaded.read().decode("utf-8", errors="replace")
         sample = raw[:2000]
         delimiter = "," if sample.count(",") > sample.count(";") else ";"
 
@@ -472,6 +473,7 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
         ranking_config.epsilon = epsilon
         ranking_config.max_iterations = max_iterations
         ranker = WebTableRanker(ranking_config, tau)
+        query_x_lists = st.session_state.submitted_queries
 
         # TODO: generator to print out the current believe (and stop button)
         print("Starting EM algorithm!")
@@ -480,7 +482,7 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
         if answers:
 
             rows = []
-            for idx, query in enumerate(zip(*tokenized_querries), 1):
+            for idx, query in enumerate(zip(*query_x_lists), 1):
                  
                     row_dict = {}
                     
@@ -491,17 +493,23 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
                     for i in range(num_x):
                         row_dict[f'X{i+1}'] = query[i]
 
-                    candidates = answers[query]
+                    tokenized_query = tuple(indexer.tokenize(x) for x in query)
 
-                    candidates_sorted = sorted(candidates, key=lambda x: x[1], reverse=True)
+                    candidates = answers.get(tokenized_query)
 
-                    candidates_sorted = [candidate for candidate in candidates_sorted if candidate[1] >= 0.01]
+                    if candidates:
+                        candidates_sorted = sorted(candidates, key=lambda x: x[1], reverse=True)
 
-                    row_dict["Y_candidates"] = [f"{candidate[0]} ({candidate[1]:.2f})" for candidate in candidates_sorted]
+                        candidates_sorted = [candidate for candidate in candidates_sorted if candidate[1] >= 0.01]
 
-                    if candidates_sorted: 
-                        row_dict["Y_selected"] = f"{candidates_sorted[0][0]} ({candidates_sorted[0][1]:.2f})"
+                        row_dict["Y_candidates"] = [f"{candidate[0]} ({candidate[1]:.2f})" for candidate in candidates_sorted]
+
+                        if candidates_sorted: 
+                            row_dict["Y_selected"] = f"{candidates_sorted[0][0]} ({candidates_sorted[0][1]:.2f})"
+                        else:
+                            row_dict["Y_selected"] = None
                     else:
+                        row_dict["Y_candidates"] = []
                         row_dict["Y_selected"] = None
                     
                     rows.append(row_dict)
