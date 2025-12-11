@@ -30,6 +30,7 @@ from src.config import (
     get_default_ranking_config
 )
 from src.database.query_factory import QueryFactory
+from src.database.direct_FD import DirectDependencyVerifier
 
 cnf = get_default_indexing_config()
 indexer = WebTableIndexer(cnf)
@@ -489,6 +490,11 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
         # TODO: generator to print out the current believe (and stop button)
         print("Starting EM algorithm!")
         answers = ranker.expectation_maximization(cleaned_x_lists, cleaned_y_lists, tokenized_querries)
+
+        erg = qf.find_xy_candidates(cleaned_x_lists, cleaned_y_lists, tau)
+        dv = DirectDependencyVerifier(qf)
+        aaa = dv.my_queue(erg, cleaned_x_lists, cleaned_y_lists, tau)
+        #st.write(aaa)
 
         if answers:
 

@@ -197,8 +197,15 @@ class DirectDependencyVerifier:
                 
                 df_right = self.load_table_data(table_ID, include_cols=cols_to_load)
                 
-                if df_right is None or df_right.empty: 
+                col_card = list(df_right.nunique(dropna = True).to_dict().values()) if df_right is not None else {}
+                #print(f"Col_Card: {col_card}")
+                
+                if df_right is None or df_right.empty or not np.all(np.array(col_card) >= tau): 
                     continue
+                # Furthermore, we check whether the cardinality of the
+                # discovered Zi is greater or equal than the corresponding E.Y.
+                # If this is not the case, we know apriori that the functional path
+                # to the transformation result cannot be maintained.
 
                 # T_j <- findJoinableTables(Z_i, E, T)
                 merged_df = pd.merge(
@@ -209,9 +216,15 @@ class DirectDependencyVerifier:
                     how='inner',
                     suffixes=('', '_drop_candidate') 
                 )
+                num_rows = len(merged_df.index)
+                #print(f"Num Rows: {num_rows}")
 
-                if merged_df.empty: 
+                if merged_df.empty or num_rows < tau: 
                     continue
+                # Our strategy to reduce the search space is to require
+                # the functional dependency constraint on at least τ of the initial
+                # examples throughout the indirection and no contradiction with
+                # regard to the given examples, as shown in Algorithm 1
 
                 cols_to_remove = []
                 for rc in right_x_cols:
@@ -233,6 +246,7 @@ class DirectDependencyVerifier:
                         actual_z_col = merged_df.columns[int(z_col)] if isinstance(z_col, int) else z_col
                     except (ValueError, IndexError):
                         continue
+
                 new_col_name = f"it{iteration_index}"
                 merged_df.rename(columns={actual_z_col: new_col_name}, inplace=True)
                 actual_z_col = new_col_name
@@ -250,21 +264,13 @@ class DirectDependencyVerifier:
                 next_paths.append((merged_df, actual_z_col))
         
         return results, next_paths
-    
-
-
-# Was noch muss: 
-# Furthermore, we check whether the cardinality of the
-# discovered Zi is greater or equal than the corresponding E.Y.
-# If this is not the case, we know apriori that the functional path
-# to the transformation result cannot be maintained.
 
 
 
-# Our strategy to reduce the search space is to require
-# the functional dependency constraint on at least τ of the initial
-# examples throughout the indirection and no contradiction with
-# regard to the given examples, as shown in Algorithm 1
+
 
 
 # Der muss entlang der Beispiele Querrien, aber die ganzen Tables laden. 
+
+###Check ob Werte in Col eignetlich Int sind. Wenn ja, ausschließen von Multi-Hop! 
+#df['deine_spalte'].str.isdigit().all()
