@@ -136,8 +136,8 @@ class QueryFactory:
             
         sql = "".join(sql_parts) + ";"
 
-        # print(sql)
-        # print(params)
+        print(sql)
+        print(params)
 
         with self.conn.cursor() as cur:
             cur.execute(sql, params)

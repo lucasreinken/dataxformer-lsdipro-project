@@ -491,9 +491,9 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
         print("Starting EM algorithm!")
         answers = ranker.expectation_maximization(cleaned_x_lists, cleaned_y_lists, tokenized_querries)
 
-        erg = qf.find_xy_candidates(cleaned_x_lists, cleaned_y_lists, tau)
+        erg = qf.find_xy_candidates(cleaned_x_lists, cleaned_y_lists, tau,) ###Notiz an mich selbst, hier kein Limit du trottel. Das sind die, die ausgeschlossen werden!!! 
         dv = DirectDependencyVerifier(qf)
-        aaa = dv.my_queue(erg, cleaned_x_lists, cleaned_y_lists, tau)
+        aaa = dv.my_queue(erg, cleaned_x_lists, cleaned_y_lists, tau, max_path_len=3, max_tables = 10)
         #st.write(aaa)
 
         if answers:
@@ -681,6 +681,5 @@ if 'results_available' in st.session_state and st.session_state.results_availabl
 
 #FD Table Example: 104022866
 
-##Todo: Check if all Values are Filled in 
-##Todo: Demo Mode with Predefined Values 
+##Todo: Check if all Values are Filled in  
 #streamlit run /Users/christophhalberstadt/Documents/GitHub/ProjectDataXFormer/src/Frontend.py  
