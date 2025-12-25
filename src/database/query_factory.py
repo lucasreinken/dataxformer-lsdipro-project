@@ -65,6 +65,19 @@ class QueryFactory:
         limit:int | None = None,                 ###limits the number of tables 
         previously_seen_tables: set| None = None ### already seen tables get excluded from the search 
         ):
+        """
+        Returns Tables and Columns where at least tau of the example values have been found in each column 
+        In: 
+            X_cols: list[list[str]]
+            Y_cols: list[list[str]]|None
+            tau: int, 
+            multi_hop:bool = False 
+            limit: int|None = None 
+            previously_seen_tables: set|None = None 
+        Out: 
+            candidates: list[tuple]|None 
+        """
+
         if multi_hop: 
             Y_cols = list()
 
@@ -146,6 +159,16 @@ class QueryFactory:
 
 
     def stable_row_val(self, index_list:list, X_lists:list[list[tuple]], Y_lists:list[list[tuple]], tau:int): 
+        """
+        Validates if actually tau example pairs can be found in the same row
+        In: 
+            index_list: list 
+            X_lists: list[list[tuple]]
+            Y_lists: list[list[tuple]]
+            tau: int 
+        Out: 
+            validated_results: list[tuple]
+        """
         
         if not index_list:      ####Muss eigentlich bereits eine eben drüber abgefangen werden. Brauchen sowas wie nen Decorator, der bei einer leeren Liste direkt abbricht. 
             return []
@@ -229,89 +252,98 @@ class QueryFactory:
 
 
 
-    @cache
-    def stable_get_y(self, idx: tuple, Querries: tuple): 
+    # @cache
+    # def stable_get_y(self, idx: tuple, Querries: tuple): ###Wird die noch verwendet? 
 
-        ###Soll er lieber Tokens oder die originalen Werte zurückgeben? Für den Join würde ersteres natürlich mehr Sinn ergeben. Bool Val einfügen um beides zu ermöglichen? 
-        # print(f"Querries: {Querries}")
-        anz_cols_q = len(Querries)
-        anz_rows_q = len(next(iter(Querries)))
-        # print(f"Idx: {idx}, ")
+    #     ###Soll er lieber Tokens oder die originalen Werte zurückgeben? Für den Join würde ersteres natürlich mehr Sinn ergeben. Bool Val einfügen um beides zu ermöglichen? 
+    #     # print(f"Querries: {Querries}")
+    #     anz_cols_q = len(Querries)
+    #     anz_rows_q = len(next(iter(Querries)))
+    #     # print(f"Idx: {idx}, ")
  
-        Table_ID = idx[0]
-        X_COL_IDs = idx[1:1+anz_cols_q]
-        Y_COL_IDs = idx[1+anz_cols_q:]
+    #     Table_ID = idx[0]
+    #     X_COL_IDs = idx[1:1+anz_cols_q]
+    #     Y_COL_IDs = idx[1+anz_cols_q:]
        
 
-        anz_cols_answer = len(Y_COL_IDs)
-        # print(f"Anz X-Col: {anz_cols_q}, Anz Y-Col: {anz_cols_answer}")
-        # print(f"X-Cols: {X_COL_IDs}, Y-Cols: {Y_COL_IDs}")
+    #     anz_cols_answer = len(Y_COL_IDs)
+    #     # print(f"Anz X-Col: {anz_cols_q}, Anz Y-Col: {anz_cols_answer}")
+    #     # print(f"X-Cols: {X_COL_IDs}, Y-Cols: {Y_COL_IDs}")
 
 
 
-        querry_pairs = [subelem for elem in zip(*(Querries)) for subelem in elem]
+    #     querry_pairs = [subelem for elem in zip(*(Querries)) for subelem in elem]
         
-        input_selects = ", ".join([f"""%s::varchar as val_{self.get_prefix(idx, anz_cols_q)}""" for idx in range(anz_cols_q)])
-        joined_input_selects= " UNION ALL ".join([f"SELECT {input_selects}"] * anz_rows_q)
+    #     input_selects = ", ".join([f"""%s::varchar as val_{self.get_prefix(idx, anz_cols_q)}""" for idx in range(anz_cols_q)])
+    #     joined_input_selects= " UNION ALL ".join([f"SELECT {input_selects}"] * anz_rows_q)
 
 
 
-        ###Das hier gibt es genau so bei Val. In eine Funktion packen und da machen lassen? 
-        x_selects = [f"p.val_{self.get_prefix(idx, anz_cols_q)}" for idx in range(anz_cols_q)]
-        y_selects = []
-        for idx in range(anz_cols_answer):
-            alias = self.get_prefix(idx + anz_cols_q, anz_cols_q)
-            y_selects.append(f"{alias}.{self.term_token_column}")
-            y_selects.append(f"{alias}.{self.term_column}")
+    #     ###Das hier gibt es genau so bei Val. In eine Funktion packen und da machen lassen? 
+    #     x_selects = [f"p.val_{self.get_prefix(idx, anz_cols_q)}" for idx in range(anz_cols_q)]
+    #     y_selects = []
+    #     for idx in range(anz_cols_answer):
+    #         alias = self.get_prefix(idx + anz_cols_q, anz_cols_q)
+    #         y_selects.append(f"{alias}.{self.term_token_column}")
+    #         y_selects.append(f"{alias}.{self.term_column}")
 
 
-        # print(y_selects)
-        all_selects = ", ".join(x_selects + y_selects)
+    #     # print(y_selects)
+    #     all_selects = ", ".join(x_selects + y_selects)
 
 
 
 
 
-        joins = []               
-        for idx, col_id in enumerate(X_COL_IDs + Y_COL_IDs):
-            alias = self.get_prefix(idx, anz_cols_q)
+    #     joins = []               
+    #     for idx, col_id in enumerate(X_COL_IDs + Y_COL_IDs):
+    #         alias = self.get_prefix(idx, anz_cols_q)
             
-            conditions = [
-                f"{alias}.{self.table_column} = {Table_ID}",
-                f"{alias}.{self.column_column} = {col_id}",
-            ]
+    #         conditions = [
+    #             f"{alias}.{self.table_column} = {Table_ID}",
+    #             f"{alias}.{self.column_column} = {col_id}",
+    #         ]
 
-            if idx < anz_cols_q: 
-                conditions.append(f"{alias}.{self.term_token_column} = p.val_{alias}")
+    #         if idx < anz_cols_q: 
+    #             conditions.append(f"{alias}.{self.term_token_column} = p.val_{alias}")
             
-            if 0 != idx: 
-                conditions.append(f"{alias}.{self.row_column} = {self.get_prefix(0, anz_cols_q)}.{self.row_column}")
+    #         if 0 != idx: 
+    #             conditions.append(f"{alias}.{self.row_column} = {self.get_prefix(0, anz_cols_q)}.{self.row_column}")
             
-            join_sql = f"JOIN {self.cells_table} {alias} ON {' AND '.join(conditions)}"
-            joins.append(join_sql)
+    #         join_sql = f"JOIN {self.cells_table} {alias} ON {' AND '.join(conditions)}"
+    #         joins.append(join_sql)
 
-        sql = f'''
-        WITH Inputs ({", ".join([f"val_{self.get_prefix(idx, anz_cols_q)}" for idx in range(anz_cols_q)])}) AS (
-            {joined_input_selects}
-        )
-        SELECT 
-            {all_selects},
-            COUNT(*) as freq
-        FROM Inputs p
-        {chr(10).join(joins)}
-        GROUP BY 
-            {all_selects}
-        '''
+    #     sql = f'''
+    #     WITH Inputs ({", ".join([f"val_{self.get_prefix(idx, anz_cols_q)}" for idx in range(anz_cols_q)])}) AS (
+    #         {joined_input_selects}
+    #     )
+    #     SELECT 
+    #         {all_selects},
+    #         COUNT(*) as freq
+    #     FROM Inputs p
+    #     {chr(10).join(joins)}
+    #     GROUP BY 
+    #         {all_selects}
+    #     '''
 
-        # print(sql)
-        # print(querry_pairs)     ###Mache ich auch jedes mal. Decorator!!! 
+    #     # print(sql)
+    #     # print(querry_pairs)     ###Mache ich auch jedes mal. Decorator!!! 
 
         
-        with self.conn.cursor() as cur:
-            cur.execute(sql, querry_pairs)
-            return cur.fetchall()
+    #     with self.conn.cursor() as cur:
+    #         cur.execute(sql, querry_pairs)
+    #         return cur.fetchall()
 
     def get_table_content(self, table_id: int, include_cols: tuple | list = None) -> pd.DataFrame | None:
+        """
+        Returns the Values of a Table as a pd.DataFrame
+        In: 
+            table_id: int 
+            include_cols: tuple|list|None = None
+        Out: 
+            df_pivot: pd.DataFrame 
+        """
+
         params = [table_id]
         where_clause = f"WHERE {self.table_column} = %s"
         

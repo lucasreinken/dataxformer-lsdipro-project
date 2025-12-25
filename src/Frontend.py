@@ -30,7 +30,8 @@ from src.config import (
     get_default_ranking_config
 )
 from src.database.query_factory import QueryFactory
-from src.database.direct_FD import DirectDependencyVerifier
+# from src.database.direct_FD import DirectDependencyVerifier
+from src.database.better_fd import DirectDependencyVerifier
 
 cnf = get_default_indexing_config()
 indexer = WebTableIndexer(cnf)
@@ -493,8 +494,8 @@ if 'start_processing' in st.session_state and st.session_state.start_processing:
 
         erg = qf.find_xy_candidates(cleaned_x_lists, cleaned_y_lists, tau,) ###Notiz an mich selbst, hier kein Limit du trottel. Das sind die, die ausgeschlossen werden!!! 
         dv = DirectDependencyVerifier(qf)
-        aaa = dv.my_queue(erg, cleaned_x_lists, cleaned_y_lists, tau, max_path_len=3, max_tables = 10)
-        #st.write(aaa)
+        aaa = dv.my_queue(erg, cleaned_x_lists, cleaned_y_lists, tau, max_path_len=3, max_tables = 25)
+        #st.write(aaa) 
 
         if answers:
 
