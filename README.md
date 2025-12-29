@@ -138,4 +138,3 @@ Licensing follows the requirements of the LSDI course at TU Berlin.
 
 Abedjan et al.  
 *DataXFormer: A Robust Transformation Discovery System*
-```
