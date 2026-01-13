@@ -404,3 +404,17 @@ class DirectDependencyVerifier:
             n_unique_lhs = fd_unique[left_join_cols].drop_duplicates().shape[0]
             n_unique_rhs = fd_unique[actual_z_col].nunique()
             return n_unique_lhs, n_unique_rhs
+        
+    
+
+
+# import cProfile
+# import pstats
+# profiler = cProfile.Profile()
+# profiler.enable()
+#####Hier könnte ihre Func stehen 
+# profiler.disable()
+# stats = pstats.Stats(profiler)
+# stats.strip_dirs()
+# stats.sort_stats("time")
+# stats.print_stats()

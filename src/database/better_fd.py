@@ -20,6 +20,11 @@ class DirectDependencyVerifier:
             print(f"Warning: Failed to load table {table_id}. Error: {e}")
             return None
         
+
+    def load_table_batch(self, whattoload: list[tuple]): 
+        
+        return {table_id: self.qf.get_table_content(table_id, include_cols=None) for table_id in whattoload}
+        
     def is_numeric_like(self, val):
         s = str(val).strip()
         
@@ -121,6 +126,35 @@ class DirectDependencyVerifier:
                     'df': filtered_df,
                 })
                 anz_valid += 1 
+
+        return results
+    
+    def itterate_batch(self, 
+                            candidates:list[tuple], 
+                            x_col_count:int, 
+                            tau:int, 
+                            limit:int|None = None,
+                            ): 
+        results = list()
+        
+        df_dict = self.load_table_batch(candidates[:limit])
+        for idx, Table_ID, df in enumerate(df_dict.items()): 
+            if df is None: 
+                continue
+            if not all(col in df.columns for col in x_cols):
+                continue
+            if len(df) < tau: 
+                continue 
+            x_cols = list(candidates[idx][1: 1+x_col_count])
+            fd_result = self.check_fd(x_cols, df)
+            if fd_result:
+                x_cols_result, y_cols_result, filtered_df = fd_result
+                results.append({
+                    'table_id': Table_ID,
+                    'x_cols': x_cols_result,
+                    'y_cols': y_cols_result,
+                    'df': filtered_df,
+                })
 
         return results
     

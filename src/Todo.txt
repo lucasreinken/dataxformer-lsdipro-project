@@ -48,3 +48,5 @@ Wie viele Null Values das sind etc. Ich finde die aussage mit den 12 Rows on Ave
 Ich würde den Claim gerne nochmal genauer begutachten für unsere Experiments. 
 
 Als weiteres Experiment den Claim, dass Tau = 2 die besten Ergebnisse geliefert hat, checken. 
+
+lucine.util as the tokenizer 
