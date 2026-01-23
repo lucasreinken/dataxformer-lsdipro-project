@@ -14,6 +14,8 @@ from src.config import (
 
 from time import perf_counter
 
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
 
 def get_ex(examples: pd.DataFrame, percents: list) -> list:
     """
@@ -96,7 +98,7 @@ def eval_exercise(
             run_eval = evaluate_results(results, query_keys, y_true, k)
 
         list_of_metrics.append(run_eval)
-        print(run_eval)
+        # print(run_eval)
 
     metrics = dict()
     for key in list_of_metrics[0].keys():
@@ -115,6 +117,7 @@ def run_single_exercise(
     indexing_config,
     ranking_config,
     vertica_config,
+    testing_config,
     count_examples,
     repeats: int,
     k: int,
@@ -124,25 +127,25 @@ def run_single_exercise(
     name, exercise, x_count = exercise_tuple
 
     indexer = WebTableIndexer(indexing_config)
-    ranker = WebTableRanker(ranking_config, vertica_config, tau)
+    ranker = WebTableRanker(ranking_config, testing_config, vertica_config, tau)
 
     try:
         print(f"Executing Exercise {name}")
-        metrics = eval_exercise(
-            exercise,
-            x_count,
-            count_examples,
-            ranker,
-            indexer,
-            repeats,
-            k,
-            return_time,
-        )
+        with ranker:
+            metrics = eval_exercise(
+                exercise,
+                x_count,
+                count_examples,
+                ranker,
+                indexer,
+                repeats,
+                k,
+                return_time,
+            )
         return name, metrics
-    finally:
-        ranker.close()
-
-    return name, metrics
+    except Exception as e:
+        print(f"Error in Exercise {name}: {e}")
+        raise e
 
 
 def normalize(val):
@@ -246,34 +249,47 @@ def full_loop(
         try:
             num_ex = len(exercises)
 
-            for ex_num, exercise in enumerate(exercises, 1):
-                name, metrics = run_single_exercise(
-                    exercise,
-                    indexing_config,
-                    ranking_config,
-                    vertica_config,
-                    count_examples,
-                    repeats,
-                    k,
-                    tau,
-                    return_time,
-                )
-                ctx.add_eval_result(name, metrics)
+            with ProcessPoolExecutor(testing_config.max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        run_single_exercise,
+                        exercise,
+                        indexing_config,
+                        ranking_config,
+                        vertica_config,
+                        testing_config,
+                        count_examples,
+                        repeats,
+                        k,
+                        tau,
+                        return_time,
+                    ): exercise
+                    for exercise in exercises
+                }
 
-                title = name.replace("_", " & ").replace("2", " → ")
-                info_msg = f"Finished EX {ex_num}/{num_ex} {title}: precision {metrics['precision']:.2f}, recall {metrics['recall']:.2f}"
+                for ex_num, future in enumerate(as_completed(futures), 1):
+                    name, metrics = future.result()
 
-                if return_time and "calc_time" in metrics:
-                    info_msg += f", calc_time: {metrics['calc_time']:.2f}"
+                    ctx.add_eval_result(name, metrics)
 
-                ctx.info(info_msg)
+                    title = name.replace("_", " & ").replace("2", " → ")
+                    info_msg = (
+                        f"Finished EX {ex_num}/{num_ex} {title}: "
+                        f"precision {metrics['precision']:.2f}, "
+                        f"recall {metrics['recall']:.2f}"
+                    )
 
-        except KeyboardInterrupt as exc:
+                    if return_time and "calc_time" in metrics:
+                        info_msg += f", calc_time: {metrics['calc_time']:.2f}"
+
+                    ctx.info(info_msg)
+
+        except KeyboardInterrupt:
             ctx.warning(
-                "Process was interrupted manually (ctr + c). Process is shutting down!"
+                "Process was interrupted manually (ctrl+c). Process is shutting down!"
             )
             wandb.finish(exit_code=1)
-            raise exc
+            raise
 
             ####Metrics zeigen, dass wir die Tables schneller löschen müssten um RAM freizugeben.
             ###Blocking in EM

@@ -3,6 +3,6 @@ services:
     container_name: lsdi_xformer
     build: .
     mem_limit: 16g #8g
-    cpus: 4.0 #1.0
+    cpus: 16.0 #1.0
     volumes:
       - ./logs:/app/logs

@@ -1,4 +1,3 @@
-from collections import defaultdict
 from src.database.query_factory import QueryFactory
 
 import atexit
@@ -18,37 +17,35 @@ def init_worker_qf(vertica_config: dict):
     atexit.register(lambda: qf.__exit__(None, None, None))
 
 
-# --------------------------
-# helpers
-# --------------------------
-def chunk_list(lst, chunk_size: int):
-    for i in range(0, len(lst), chunk_size):
-        yield lst[i : i + chunk_size]
-
-
 def group_by_table_id(index_list):
-    by_table = defaultdict(list)
+    by_table = {}
+
     for idx in index_list:
-        by_table[idx[0]].append(idx)
+        table_id = idx[0]
+        if table_id in by_table:
+            by_table[table_id].append(idx)
+        else:
+            by_table[table_id] = [idx]
+
     return by_table
 
 
 # --------------------------
 # worker functions
 # --------------------------
-def worker_find_columns_chunk(index_list_chunk, x_values, y_values, tau):
+def worker_stable_row_val(index_list_chunk, x_cols, y_cols, tau):
     global _WORKER_QF
-    return set(_WORKER_QF.stable_row_val(index_list_chunk, x_values, y_values, tau))
+    return set(_WORKER_QF.stable_row_val(index_list_chunk, x_cols, y_cols, tau))
 
 
-def worker_find_answers(indices_chunk, Q, len_x):
+def worker_find_answers(indices, Q, len_x):
     global _WORKER_QF
 
     Q = tuple(tuple(q) for q in Q)
     conditions = list(zip(*Q))
 
     out = []
-    for index in indices_chunk:
+    for index in indices:
         table_df = _WORKER_QF.get_table_content(index[0], index[1:])
 
         x_cols = list(index[1 : 1 + len_x])

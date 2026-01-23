@@ -1,173 +1,247 @@
-from copy import deepcopy
-from pprint import pprint
+from concurrent.futures import ProcessPoolExecutor
+
+
+from src.database.query_factory import QueryFactory
 from src.web_tables.querying import WebTableQueryEngine
 from src.config import get_default_querying_config
+from src.database.mp_workers import init_worker_qf
+
+from pprint import pprint
 
 
 class WebTableRanker:
-    def __init__(self, config, tau=None):
-        self.epsilon = config.epsilon
-        self.alpha = config.alpha
-        self.max_iterations = config.max_iterations
-        self.table_prior = config.table_prior
+    def __init__(
+        self,
+        ranking_config,
+        testing_config,
+        vertica_config,
+        tau: int | None = None,
+    ) -> None:
+        """
+        Initialize the WebTableRanker.
 
-        self.topk = config.topk
+        Args:
+            ranking_config
+            testing_config
+            vertica_config
+            tau: int | None = None
+
+        Returns:
+            None
+        """
+        self.epsilon = ranking_config.epsilon
+        self.alpha = ranking_config.alpha
+        self.max_iterations = ranking_config.max_iterations
+        self.table_prior = ranking_config.table_prior
+
+        self.topk = ranking_config.topk
 
         querying_config = get_default_querying_config()
         if tau:
             querying_config.tau = tau
-        self.query_engine = WebTableQueryEngine(querying_config)
 
-    def expectation_maximization(self, X: list[str], Y: list[str], Q: list[str]):
-        # TODO: docstring (X, Y, Q have to be tokenized as input -> return untokenized y values)
+        self.vertica_config = vertica_config
 
-        # TODO: store them more lightweight (e.g. decouple score)
-        # answers: (x,y) → {score, tables={t1,t2,…}}
-        # tables:  t_id → {score, answers={(x1,y1),(x2,y2)…}}
+        self.query_factory = QueryFactory(self.vertica_config)
+        self.query_engine = WebTableQueryEngine(querying_config, self.query_factory)
+        self.max_workers = ranking_config.max_workers
+
+    def __enter__(self):
+        self.query_factory.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.query_factory.__exit__(exc_type, exc_val, exc_tb)
+
+    def expectation_maximization(
+        self,
+        x_input: list[list[str]],
+        y_input: list[list[str]],
+        queries: list[list[str]],
+        print_iterations: bool = False,
+    ) -> dict:
+        """
+        Run the Expectation-Maximization loop to rank answers and tables.
+
+        Args:
+            x_input: list[list[str]]
+            y_input: list[list[str]]
+            queries: list[list[str]]
+
+        Returns:
+            result: dict
+        """
+        finished_querying = False
+        delta_score = float("inf")
+        iteration = 0
+        previously_seen_tables = set()
+        old_scores = dict()
 
         answers = {
             (tuple(col_x), tuple(col_y)): {"score": 1.0, "tables": set(), "term": None}
-            for col_x, col_y in zip(zip(*X), zip(*Y))
+            for col_x, col_y in zip(zip(*x_input), zip(*y_input))
             if None not in col_x and None not in col_y
         }
-        # TODO: add Jaccard Similiratity (if labels provided)
-        tables = {}
 
-        q_cols = list({tuple(col) for col in zip(*Q) if None not in col})
+        tables = dict()
 
-        Q = [list(row) for row in zip(*q_cols)]
+        q_cols = list({tuple(col) for col in zip(*queries) if None not in col})
+        rearranged_queries = [list(row) for row in zip(*q_cols)]
 
-        finished_querying = False
-        old_answers = None
-        delta_score = float("inf")
+        with ProcessPoolExecutor(
+            max_workers=self.max_workers,
+            initializer=init_worker_qf,
+            initargs=(self.vertica_config,),
+        ) as ex:
+            while (
+                delta_score > self.epsilon or not finished_querying
+            ) and iteration < self.max_iterations:
+                iteration += 1
 
-        iteration = 0
+                if print_iterations:
+                    print("")
+                    print(f"Current EM Iteration: {iteration}")
 
-        old_erg = set()
+                if not finished_querying:
+                    finished_querying = True
 
-        while (
-            delta_score > self.epsilon or not finished_querying
-        ) and iteration < self.max_iterations:
-            iteration += 1
-            print("")
-            print(f"Current EM Iteration: {iteration}")
-            print("")
+                    if not tables:
+                        query_values = [
+                            q_list + x_list
+                            for q_list, x_list in zip(rearranged_queries, x_input)
+                        ]
+                        x_values = x_input
+                        y_values = y_input
+                    else:
+                        query_values = rearranged_queries
+                        requery_pairs = list()
+                        x_to_ys = dict()
 
-            if not finished_querying:
-                # TODO: do we have to query for all answers again (just because of tau?)
-                # TODO: query_tables_ids = query_tables_ids.add(tableJoiner(query_answers_set, Q, query_tables_ids))
-                # TODO: somehow regulate the quering (really dirty tables will result in score = 0, so the query value score of none will be 1)
-                # TODO: -> this is because of uncoveredX (or bad) will explode (examples with score of 1)
-                # TODO: could take just top k answers (procentual?) or a prob threshold or just query for new answers if score of none is high (overall?)
-                # TODO: play around with hyperparameters (also table prior) -> dirtier tables = lower score
-                finished_querying = True
+                        for (x_answer, y_answer), info in answers.items():
+                            x_to_ys.setdefault(x_answer, []).append(
+                                (y_answer, float(info["score"]))
+                            )
 
-                if not tables:
-                    query_values = [q_list + x_list for q_list, x_list in zip(Q, X)]
-                    x_values = X
-                    y_values = Y
-                else:
-                    query_values = Q
-                    requery_pairs = []
-                    x_to_ys = {}
-                    for (x, y), info in answers.items():
-                        if x not in x_to_ys:
-                            x_to_ys[x] = []
-                        x_to_ys[x].append((y, float(info["score"])))
+                        for x in x_to_ys:
+                            ys = x_to_ys[x]
 
-                    none_score = {}
-                    for x in x_to_ys:
-                        ys = x_to_ys[x]
+                            total = sum(score for _, score in ys)
+                            prob_of_none = max(0.0, 1.0 - total)
 
-                        total = 0.0
-                        for _, score in ys:
-                            total += score
-                        none = max(0.0, 1.0 - total)
-                        none_score[x] = none
+                            ys_sorted = sorted(ys, key=lambda t: t[1], reverse=True)
+                            answer_limit = min(self.topk, len(ys_sorted))
 
-                        ys_sorted = sorted(ys, key=lambda t: t[1], reverse=True)
-                        limit = min(self.topk, len(ys_sorted))
+                            for idx in range(answer_limit):
+                                y, score = ys_sorted[idx]
+                                if score > prob_of_none:
+                                    requery_pairs.append((x, y))
 
-                        for i in range(limit):
-                            y, score = ys_sorted[i]
-                            if score > none:
-                                requery_pairs.append((x, y))
-                    x_cols = [x for x, _ in requery_pairs]
-                    y_cols = [y for _, y in requery_pairs]
-                    x_values = [list(row) for row in zip(*x_cols)]
-                    y_values = [list(row) for row in zip(*y_cols)]
+                        x_cols = [x_part for x_part, _ in requery_pairs]
+                        y_cols = [y_part for _, y_part in requery_pairs]
+                        x_values = [list(row) for row in zip(*x_cols)] if x_cols else []
+                        y_values = [list(row) for row in zip(*y_cols)] if y_cols else []
 
-                erg = self.query_engine.find_columns(x_values, y_values)
-                indexes = erg - old_erg
-                old_erg = deepcopy(erg)
+                    candidates = self.query_engine.find_columns(
+                        x_values, y_values, previously_seen_tables
+                    )
 
-                for table_id, answer_list in self.query_engine.find_answers(
-                    indexes, query_values
-                ):
-                    for answer in answer_list:
-                        if None in answer[1]:
-                            continue
-                        # TODO: change it back somehow to untokenized words
-                        y_term = tuple(answer[1])
-                        answer = (tuple(answer[0]), tuple(answer[1]))
-                        if answer not in answers:
-                            # TODO: just if a real answer was found (not examples)
-                            finished_querying = False
-                            answers[answer] = {
-                                "score": 0.0,
-                                "tables": set(),
-                                "term": y_term,
-                            }
+                    previously_seen_tables.update(c[0] for c in candidates)
 
-                        tables.setdefault(table_id, {"score": 0.0, "answers": set()})
+                    for (
+                        table_id,
+                        answer_list,
+                    ) in self.query_engine.find_answers_parallel(
+                        executor=ex,
+                        table_ids=candidates,
+                        queries=query_values,
+                    ):
+                        for untupled_answer in answer_list:
+                            if None in untupled_answer[1]:
+                                continue
 
-                        answers[answer]["tables"].add(table_id)
-                        tables[table_id]["answers"].add(answer)
+                            y_term = tuple(untupled_answer[1])
+                            answer = (
+                                tuple(untupled_answer[0]),
+                                tuple(untupled_answer[1]),
+                            )
 
-            tables = self.update_table_scores(answers, tables)
-            answers = self.update_answer_scores(answers, tables, Q)
+                            if answer not in answers:
+                                finished_querying = False
+                                answers[answer] = {
+                                    "score": 0.0,
+                                    "tables": set(),
+                                    "term": y_term,
+                                }
 
-            if finished_querying and old_answers:
-                delta_score = sum(
-                    abs(answers[a]["score"] - old_answers[a]["score"]) for a in answers
+                            tables.setdefault(
+                                table_id, {"score": 0.0, "answers": set()}
+                            )
+
+                            answers[answer]["tables"].add(table_id)
+                            tables[table_id]["answers"].add(answer)
+
+                tables = self.update_table_scores(
+                    answers,
+                    tables,
+                    print_iterations,
                 )
 
-            old_answers = deepcopy(answers)
+                answers = self.update_answer_scores(
+                    answers,
+                    tables,
+                    rearranged_queries,
+                    print_iterations,
+                )
 
-            # TODO: outside the loop (just for testing)
-            result = {
-                x: [
-                    (info["term"], info["score"])
-                    for (x2, _), info in answers.items()
-                    if x2 == x
-                ]
-                for x in zip(*Q)
-            }
+                if finished_querying and old_scores:
+                    delta_score = sum(
+                        abs(answers[a]["score"] - old_scores.get(a, 0.0))
+                        for a in answers
+                    )
 
-            print("")
-            pprint(result)
+                old_scores = {key: info["score"] for key, info in answers.items()}
 
-        # x Values are still tokenized (need to be matches with untokenized Q afterwards)
-        # TODO: there is not 1:1 matching between tokenized and term (how to handle it?)
+                if print_iterations:
+                    result = {
+                        x: [
+                            (info["term"], info["score"])
+                            for (x2, _), info in answers.items()
+                            if x2 == x
+                        ]
+                        for x in zip(*rearranged_queries)
+                    }
+                    pprint(result)
+
+        result = {
+            x: [
+                (info["term"], info["score"])
+                for (x2, _), info in answers.items()
+                if x2 == x
+            ]
+            for x in zip(*rearranged_queries)
+        }
         return result
 
-    # TODO: work with class variables for answers and tables?
+    def update_table_scores(self, answers, tables, print_):
+        """
+        Update table reliability scores given current answer probabilities.
+        """
+        if print_:
+            print("")
 
-    def update_table_scores(self, answers, tables):
         x_best_score = {}
         for (x, _), info in answers.items():
             score = info["score"]
             if x not in x_best_score or score > x_best_score[x]:
                 x_best_score[x] = score
 
-        for table_id in tables:
+        for table_id in list(tables.keys()):
             good = 0
             bad = 0
-            total = 0  # what is it used for?
-
             covered_query_answers_x = set()
 
-            for table_answer in tables[table_id]["answers"]:
+            ans_set = tables[table_id]["answers"]
+            for table_answer in ans_set:
                 x, _ = table_answer
                 covered_query_answers_x.add(x)
 
@@ -178,34 +252,37 @@ class WebTableRanker:
                 else:
                     bad += 1
 
-            # print(covered_query_answers_x)
             unseen_x = 0.0
             for x, best_score in x_best_score.items():
                 if x not in covered_query_answers_x:
                     unseen_x += best_score
-
-            # TODO: get it from the tables_table vertica (or from config for all)
-            # table_prior = 0.5
 
             table_score = self.alpha * (
                 (self.table_prior * good)
                 / (self.table_prior * good + (1 - self.table_prior) * (bad + unseen_x))
             )
 
-            # remove
-            # print(f'Score of table {table_id}: {table_score}')
+            if print_:
+                print(
+                    f"Score of table {table_id} ({table_score}): {covered_query_answers_x}"
+                )
 
             tables[table_id]["score"] = table_score
 
         return tables
 
-    def update_answer_scores(self, answers, tables, Q):
-        print("")
-        # TODO: Really set everything to 1 or just the new ones as below???
+    def update_answer_scores(self, answers, tables, Q, print_):
+        """
+        Update answer probabilities given current table scores.
+        """
+        if print_:
+            print("")
+
         for _, info in answers.items():
             info["score"] = 1.0
 
-        for x_q in zip(*Q):
+        q_cols = list(zip(*Q))
+        for x_q in q_cols:
             x_answers = {(x, y) for (x, y) in answers if x == x_q}
 
             tables_for_x = {
@@ -219,11 +296,8 @@ class WebTableRanker:
 
             for table_id in tables_for_x:
                 score_of_none *= 1 - tables[table_id]["score"]
-                for answer in x_answers:
-                    # TODO: or just set 1 to the newly initialized?
-                    # if answers[answer]["score"] == 0:
-                    #    answers[answer]["score"] = 1
 
+                for answer in x_answers:
                     if answer in tables[table_id]["answers"]:
                         answers[answer]["score"] *= tables[table_id]["score"]
                     else:
@@ -236,6 +310,7 @@ class WebTableRanker:
             for answer in x_answers:
                 answers[answer]["score"] /= denominator
 
-            print(f"Score of None for {x_q}: {score_of_none / denominator}")
+            if print_:
+                print(f"Probability of None for {x_q}: {score_of_none / denominator}")
 
         return answers

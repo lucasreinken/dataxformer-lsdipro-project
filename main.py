@@ -3,7 +3,6 @@ from src.testing import full_loop
 from pathlib import Path
 import pandas as pd
 import io
-
 import warnings
 
 warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy connectable")

@@ -1,4 +1,3 @@
-import nltk
 from nltk.tokenize import word_tokenize
 import string
 from nltk.stem import PorterStemmer
@@ -7,6 +6,8 @@ from pathlib import Path
 import gzip
 import orjson
 from typing import Iterator
+
+import nltk
 
 nltk.download("punkt")
 nltk.download("punkt_tab")

@@ -6,27 +6,39 @@ class IndexingConfig:
     batch_size: int = 3000
     stop_words: list[str] | None = field(
         default_factory=lambda: [
-            "the",
             "a",
             "an",
             "and",
-            "or",
-            "but",
-            "in",
-            "on",
-            "at",
-            "for",
-            "of",
-            "to",
-            "is",
             "are",
-            "was",
+            "as",
+            "at",
             "be",
+            "but",
+            "by",
+            "for",
+            "if",
+            "in",
+            "into",
+            "is",
             "it",
-            "this",
+            "no",
+            "not",
+            "of",
+            "on",
+            "or",
+            "such",
             "that",
-            "no, as",
+            "the",
+            "their",
+            "then",
             "there",
+            "these",
+            "they",
+            "this",
+            "to",
+            "was",
+            "will",
+            "with",
         ]
     )
     stemmer: str | None = None
@@ -48,6 +60,7 @@ class RankingConfig:
     max_iterations = float("inf")
     table_prior = 0.5
     topk = 1
+    max_workers: int = 4
 
 
 @dataclass
@@ -73,7 +86,7 @@ class TestingConfig:
     entity = "DataXFormer"
     repeats: int = 5
     k: int = 5  ##topk
-    max_workers: int = 4
+    max_workers: int = 8
     return_time: bool = True
 
 
