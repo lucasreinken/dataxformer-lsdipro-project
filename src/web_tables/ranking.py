@@ -3,29 +3,24 @@ from pprint import pprint
 from src.web_tables.querying import WebTableQueryEngine
 from src.config import get_default_querying_config
 
+
 class WebTableRanker:
     def __init__(self, config, tau=None):
-
         self.epsilon = config.epsilon
         self.alpha = config.alpha
         self.max_iterations = config.max_iterations
         self.table_prior = config.table_prior
+
+        self.topk = config.topk
 
         querying_config = get_default_querying_config()
         if tau:
             querying_config.tau = tau
         self.query_engine = WebTableQueryEngine(querying_config)
 
-    def score(self, candidates, query_context):
-        return
-
-    def rank(self, candidates, query_context):
-        scores = self.score(candidates, query_context)
-        return
-
     def expectation_maximization(self, X: list[str], Y: list[str], Q: list[str]):
         # TODO: docstring (X, Y, Q have to be tokenized as input -> return untokenized y values)
-        
+
         # TODO: store them more lightweight (e.g. decouple score)
         # answers: (x,y) → {score, tables={t1,t2,…}}
         # tables:  t_id → {score, answers={(x1,y1),(x2,y2)…}}
@@ -44,17 +39,19 @@ class WebTableRanker:
 
         finished_querying = False
         old_answers = None
-        delta_score = float('inf')
+        delta_score = float("inf")
 
         iteration = 0
 
         old_erg = set()
 
-        while (delta_score > self.epsilon or not finished_querying) and iteration < self.max_iterations:
-            iteration+=1
-            print('')
-            print(f'Current EM Iteration: {iteration}')
-            print('')
+        while (
+            delta_score > self.epsilon or not finished_querying
+        ) and iteration < self.max_iterations:
+            iteration += 1
+            print("")
+            print(f"Current EM Iteration: {iteration}")
+            print("")
 
             if not finished_querying:
                 # TODO: do we have to query for all answers again (just because of tau?)
@@ -71,8 +68,32 @@ class WebTableRanker:
                     y_values = Y
                 else:
                     query_values = Q
-                    x_cols = [x for x, _ in answers.keys()]
-                    y_cols = [y for _, y in answers.keys()]
+                    requery_pairs = []
+                    x_to_ys = {}
+                    for (x, y), info in answers.items():
+                        if x not in x_to_ys:
+                            x_to_ys[x] = []
+                        x_to_ys[x].append((y, float(info["score"])))
+
+                    none_score = {}
+                    for x in x_to_ys:
+                        ys = x_to_ys[x]
+
+                        total = 0.0
+                        for _, score in ys:
+                            total += score
+                        none = max(0.0, 1.0 - total)
+                        none_score[x] = none
+
+                        ys_sorted = sorted(ys, key=lambda t: t[1], reverse=True)
+                        limit = min(self.topk, len(ys_sorted))
+
+                        for i in range(limit):
+                            y, score = ys_sorted[i]
+                            if score > none:
+                                requery_pairs.append((x, y))
+                    x_cols = [x for x, _ in requery_pairs]
+                    y_cols = [y for _, y in requery_pairs]
                     x_values = [list(row) for row in zip(*x_cols)]
                     y_values = [list(row) for row in zip(*y_cols)]
 
@@ -80,7 +101,9 @@ class WebTableRanker:
                 indexes = erg - old_erg
                 old_erg = deepcopy(erg)
 
-                for table_id, answer_list in self.query_engine.find_answers(indexes, query_values):
+                for table_id, answer_list in self.query_engine.find_answers(
+                    indexes, query_values
+                ):
                     for answer in answer_list:
                         if None in answer[1]:
                             continue
@@ -90,7 +113,11 @@ class WebTableRanker:
                         if answer not in answers:
                             # TODO: just if a real answer was found (not examples)
                             finished_querying = False
-                            answers[answer] = {"score": 0.0, "tables": set(), "term": y_term}
+                            answers[answer] = {
+                                "score": 0.0,
+                                "tables": set(),
+                                "term": y_term,
+                            }
 
                         tables.setdefault(table_id, {"score": 0.0, "answers": set()})
 
@@ -102,19 +129,22 @@ class WebTableRanker:
 
             if finished_querying and old_answers:
                 delta_score = sum(
-                    abs(answers[a]["score"] - old_answers[a]["score"])
-                    for a in answers
+                    abs(answers[a]["score"] - old_answers[a]["score"]) for a in answers
                 )
 
             old_answers = deepcopy(answers)
 
             # TODO: outside the loop (just for testing)
             result = {
-                x: [(info["term"], info["score"]) for (x2, _), info in answers.items() if x2 == x]
+                x: [
+                    (info["term"], info["score"])
+                    for (x2, _), info in answers.items()
+                    if x2 == x
+                ]
                 for x in zip(*Q)
             }
 
-            print('')
+            print("")
             pprint(result)
 
         # x Values are still tokenized (need to be matches with untokenized Q afterwards)
@@ -124,13 +154,12 @@ class WebTableRanker:
     # TODO: work with class variables for answers and tables?
 
     def update_table_scores(self, answers, tables):
-
         x_best_score = {}
         for (x, _), info in answers.items():
             score = info["score"]
             if x not in x_best_score or score > x_best_score[x]:
                 x_best_score[x] = score
-        
+
         for table_id in tables:
             good = 0
             bad = 0
@@ -158,7 +187,10 @@ class WebTableRanker:
             # TODO: get it from the tables_table vertica (or from config for all)
             # table_prior = 0.5
 
-            table_score = self.alpha * ((self.table_prior * good) / (self.table_prior * good + (1-self.table_prior) * (bad + unseen_x)))
+            table_score = self.alpha * (
+                (self.table_prior * good)
+                / (self.table_prior * good + (1 - self.table_prior) * (bad + unseen_x))
+            )
 
             # remove
             # print(f'Score of table {table_id}: {table_score}')
@@ -168,8 +200,7 @@ class WebTableRanker:
         return tables
 
     def update_answer_scores(self, answers, tables, Q):
-
-        print('')
+        print("")
         # TODO: Really set everything to 1 or just the new ones as below???
         for _, info in answers.items():
             info["score"] = 1.0
@@ -187,24 +218,24 @@ class WebTableRanker:
             score_of_none = 1
 
             for table_id in tables_for_x:
-                score_of_none *= (1-tables[table_id]["score"])
+                score_of_none *= 1 - tables[table_id]["score"]
                 for answer in x_answers:
                     # TODO: or just set 1 to the newly initialized?
-                    #if answers[answer]["score"] == 0:
+                    # if answers[answer]["score"] == 0:
                     #    answers[answer]["score"] = 1
 
                     if answer in tables[table_id]["answers"]:
                         answers[answer]["score"] *= tables[table_id]["score"]
                     else:
-                        answers[answer]["score"] *= (1-(tables[table_id]["score"]))
+                        answers[answer]["score"] *= 1 - (tables[table_id]["score"])
 
             denominator = score_of_none + sum(
                 (answers[answer]["score"] for answer in x_answers)
             )
-            
+
             for answer in x_answers:
                 answers[answer]["score"] /= denominator
-            
-            print(f'Score of None for {x_q}: {score_of_none/denominator}')
+
+            print(f"Score of None for {x_q}: {score_of_none / denominator}")
 
         return answers

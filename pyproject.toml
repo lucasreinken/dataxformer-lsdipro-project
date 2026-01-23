@@ -9,7 +9,6 @@ requires-python = ">=3.10"
 dependencies = [
     "pandas",
     "numpy",
-    "torch",
     "matplotlib",
     "nltk",                 # Tokenization, stemming, ngrams
     "tabulate",             # Pretty-printing tables

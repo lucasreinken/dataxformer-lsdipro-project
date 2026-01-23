@@ -1,56 +1,33 @@
-from src.web_tables.indexing import WebTableIndexer
-from src.web_tables.querying import WebTableQueryEngine
-from src.web_tables.ranking import WebTableRanker
-from src.config import (
-    get_default_vertica_config,
-    get_default_indexing_config,
-    get_default_querying_config,
-    get_default_ranking_config
-    )
-from src.database import VerticaClient
+from dotenv import load_dotenv
+from src.testing import full_loop
+from pathlib import Path
+import pandas as pd
+import io
+
+import warnings
+
+warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy connectable")
+
 
 def main():
+    load_dotenv()
+    base_dir = Path(__file__).resolve().parent
+    csv_dir = base_dir / "data" / "DataXFormer-Queries"
 
-    config = get_default_indexing_config()
+    exercises: list[list] = []
 
-    tokenizer = WebTableIndexer(config)
+    for csv_file in csv_dir.glob("*.csv"):
+        raw = csv_file.read_text(encoding="utf-8", errors="replace")
+        df = pd.read_csv(io.StringIO(raw), sep=",", header=0)
 
-    print(tokenizer.tokenize("Paris"))
-    print(tokenizer.tokenize("Warschau"))
-    print(tokenizer.tokenize("Larry"))
-    print(tokenizer.tokenize("harri"))
-    print(tokenizer.tokenize("U+*~0041"))
+        stem = csv_file.stem
+        left = stem.split("2", 1)[0]
+        k = left.count("_") + 1
 
-    print(tokenizer.tokenize("Peter   Thomas MÜLLER"))
+        exercises.append([stem, df, k])
 
-    print(tokenizer.tokenize("there"))
+    full_loop(exercises, return_time=True)
 
-    print(tokenizer.tokenize("the best"))
-
-    X = [[
-    "ord", "dfw", "atl", "mia", "bos",
-    "yyz", "yvr", "yul",
-    "syd", "mel", "akl"
-    ],
-    [
-    "chicago", "dallas", "atlanta", "miami", "boston",
-    "toronto", "vancouver", "montreal",
-    "sydney", "melbourne", "auckland"
-    ]]
-
-    Y = [[
-    "usa", "usa", "usa", "usa", "usa",
-    "canada", "canada", "canada",
-    "australia", "australia", "new zealand"
-    ]]
-
-    config = get_default_ranking_config()
-
-    ranker = WebTableRanker(config)
-
-    print(ranker.expectation_maximization(X, Y, [["led", "gva", "kei", "hel", "lis", "svp", "osl", "arn", "bru", "zrh"],
-                                                 ["saint petersburg", "geneva", "kepi", "helsinki", "lisbon", "kuito", "oslo", "stockholm", "brussels", "zurich"]
-                                                ]))
 
 if __name__ == "__main__":
-    main() 
+    main()

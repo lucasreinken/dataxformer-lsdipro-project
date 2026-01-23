@@ -93,3 +93,32 @@ LLM, wenn dann wie?
 Translations 
 Web Forms 
 Non-Functional Evaluation als Alternative zu k-nearest or 
+
+
+
+
+
+
+
+"""
+Precision Recall, F-Score
+Top1, Top5, TopAll Acc for found solutions compared to the real one 
+Statistics over NCols, NRows, Numel in Found and Relevant Tables 
+Single vs Multi-Column 
+Execution Time (Overall, Funcs?, Steps?)
+
+(Hyperparameter Tuning without Multi-Hop?)
+Erst Tau 
+Dann Examples 5 Examples vs 25% vs 50% vs 75%  ()
+Top-k (50 given? No info in third paper 6.3.2), make sure that it is not the same? Threshhold against Topk 
+EM vs. Majority  
+Dann Multi-Hop, (An-Aus, All iters, one, two, End?, Path-Len 1, 2, (3), Max-Tables (10, 25, 50, Inf))
+
+
+Sollten wir non Non-Functional Dependencies nutzen? 
+1:N 
+
+LLM, wenn dann wie? 
+Translations 
+Web Forms 
+Non-Functional Evaluation als Alternative zu k-nearest or """
