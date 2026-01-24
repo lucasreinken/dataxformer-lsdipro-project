@@ -57,10 +57,11 @@ class QueryingConfig:
 class RankingConfig:
     epsilon = 0.001
     alpha = 0.99
-    max_iterations = float("inf")
     table_prior = 0.5
     topk = 1
     max_workers: int = 4
+    max_requery_iterations = 2
+    max_requery_answers: int = 50
 
 
 @dataclass
@@ -86,7 +87,7 @@ class TestingConfig:
     entity = "DataXFormer"
     repeats: int = 5
     k: int = 5  ##topk
-    max_workers: int = 8
+    max_workers: int = 4
     return_time: bool = True
 
 

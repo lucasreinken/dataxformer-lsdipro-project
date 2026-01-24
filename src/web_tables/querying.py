@@ -1,9 +1,6 @@
 from concurrent.futures import as_completed
 
-
-from src.database.mp_workers import worker_find_answers
-
-from collections.abc import Iterator
+from src.database.mp_workers import worker_validate_and_find_answers
 
 
 class WebTableQueryEngine:
@@ -35,7 +32,7 @@ class WebTableQueryEngine:
         self.multi_hop = multi_hop
         self.print_query = print_query
 
-    def find_columns(
+    def find_candidates(
         self, x_cols, y_cols, previously_seen_tables: set | None = None
     ) -> set:
         """
@@ -53,33 +50,30 @@ class WebTableQueryEngine:
             previously_seen_tables=previously_seen_tables,
             print_query=self.print_query,
         )
-        if not candidates:
-            return set()
-
-        # stable_row_val returns a list/iterable of validated index tuples
-        return set(
-            self.query_factory.stable_row_val(candidates, x_cols, y_cols, self.tau)
-        )
+        return candidates
 
     def find_answers_parallel(
         self,
         executor,
-        table_ids: set[int],
+        indexes: set[tuple],
+        ex_x: list[list[str]],
+        ex_y: list[list[str]],
         queries: list[list[str]],
-    ) -> Iterator[tuple[int, list[str]]]:
-        table_list = list(table_ids)
-        if not table_list:
+    ):
+        idx_list = list(indexes)
+        if not idx_list:
             return
             yield
 
-        len_x = len(queries)
-
-        # one task per table
         tasks = [
-            executor.submit(worker_find_answers, [table_id], queries, len_x)
-            for table_id in table_list
+            executor.submit(
+                worker_validate_and_find_answers, idx, ex_x, ex_y, queries, self.tau
+            )
+            for idx in idx_list
         ]
 
-        for task in as_completed(tasks):
-            for table_id, answer_list in task.result():
-                yield table_id, answer_list
+        for fut in as_completed(tasks):
+            res = fut.result()
+            if res is None:
+                continue
+            yield res

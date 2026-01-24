@@ -1,5 +1,9 @@
 from concurrent.futures import ProcessPoolExecutor
 
+from datetime import datetime
+import time
+from copy import deepcopy
+import random
 
 from src.database.query_factory import QueryFactory
 from src.web_tables.querying import WebTableQueryEngine
@@ -31,7 +35,7 @@ class WebTableRanker:
         """
         self.epsilon = ranking_config.epsilon
         self.alpha = ranking_config.alpha
-        self.max_iterations = ranking_config.max_iterations
+        self.max_requery_iterations = ranking_config.max_requery_iterations
         self.table_prior = ranking_config.table_prior
 
         self.topk = ranking_config.topk
@@ -45,6 +49,16 @@ class WebTableRanker:
         self.query_factory = QueryFactory(self.vertica_config)
         self.query_engine = WebTableQueryEngine(querying_config, self.query_factory)
         self.max_workers = ranking_config.max_workers
+        self.max_requery_answers = ranking_config.max_requery_answers
+
+    # ---------- debug helpers ----------
+    @staticmethod
+    def _now_str() -> str:
+        return datetime.now().strftime("%H:%M:%S.%f")[:-3]
+
+    def _log(self, msg: str, enabled: bool) -> None:
+        if enabled:
+            print(f"[{self._now_str()}] {msg}")
 
     def __enter__(self):
         self.query_factory.__enter__()
@@ -59,6 +73,7 @@ class WebTableRanker:
         y_input: list[list[str]],
         queries: list[list[str]],
         print_iterations: bool = False,
+        debug_timing: bool = False,
     ) -> dict:
         """
         Run the Expectation-Maximization loop to rank answers and tables.
@@ -76,6 +91,8 @@ class WebTableRanker:
         iteration = 0
         previously_seen_tables = set()
         old_scores = dict()
+        old_y_values = list()
+        old_query_y_values = list()
 
         answers = {
             (tuple(col_x), tuple(col_y)): {"score": 1.0, "tables": set(), "term": None}
@@ -88,22 +105,41 @@ class WebTableRanker:
         q_cols = list({tuple(col) for col in zip(*queries) if None not in col})
         rearranged_queries = [list(row) for row in zip(*q_cols)]
 
+        self._log(
+            f"Starting EM with max_workers={self.max_workers}, "
+            f"epsilon={self.epsilon}, alpha={self.alpha}, max_requery_iterations={self.max_requery_iterations}, topk={self.topk}",
+            debug_timing,
+        )
+
         with ProcessPoolExecutor(
             max_workers=self.max_workers,
             initializer=init_worker_qf,
             initargs=(self.vertica_config,),
         ) as ex:
-            while (
-                delta_score > self.epsilon or not finished_querying
-            ) and iteration < self.max_iterations:
+            self._log("ProcessPoolExecutor created", debug_timing)
+
+            while delta_score > self.epsilon or not finished_querying:
                 iteration += 1
+                iter_start = time.perf_counter()
 
                 if print_iterations:
                     print("")
                     print(f"Current EM Iteration: {iteration}")
 
+                self._log(
+                    f"EM iteration {iteration} START (delta_score={delta_score}, finished_querying={finished_querying})",
+                    debug_timing,
+                )
+
+                t1 = None
+
+                if iteration > self.max_requery_iterations:
+                    finished_querying = True
+
                 if not finished_querying:
                     finished_querying = True
+                    query_x_values = list()
+                    query_y_values = list()
 
                     if not tables:
                         query_values = [
@@ -112,6 +148,10 @@ class WebTableRanker:
                         ]
                         x_values = x_input
                         y_values = y_input
+                        self._log(
+                            f"Iteration {iteration}: initial querying mode (tables empty). query_values rows={len(query_values)}",
+                            debug_timing,
+                        )
                     else:
                         query_values = rearranged_queries
                         requery_pairs = list()
@@ -141,44 +181,87 @@ class WebTableRanker:
                         x_values = [list(row) for row in zip(*x_cols)] if x_cols else []
                         y_values = [list(row) for row in zip(*y_cols)] if y_cols else []
 
-                    candidates = self.query_engine.find_columns(
-                        x_values, y_values, previously_seen_tables
+                    if x_values and len(x_values[0]) > self.max_requery_answers:
+                        n_cols = len(x_values[0])
+
+                        # randomly choose which column-pairs to keep
+                        keep_idx = random.sample(
+                            range(n_cols), self.max_requery_answers
+                        )
+
+                        # slice each column-list consistently
+                        query_x_values = [
+                            [row[i] for i in keep_idx] for row in x_values
+                        ]
+                        query_y_values = [
+                            [row[i] for i in keep_idx] for row in y_values
+                        ]
+                    else:
+                        query_x_values = x_values
+                        query_y_values = y_values
+
+                    if old_y_values != y_values or old_query_y_values != query_y_values:
+                        old_y_values = deepcopy(y_values)
+                        old_query_y_values = deepcopy(query_y_values)
+
+                        t0 = time.perf_counter()
+                        candidates = self.query_engine.find_candidates(
+                            query_x_values, query_y_values, previously_seen_tables
+                        )
+                        self._log(
+                            f"find_candidates took {time.perf_counter() - t0:.3f}s (candidates={len(candidates)})",
+                            debug_timing,
+                        )
+                        previously_seen_tables.update(c[0] for c in candidates)
+                        t1 = time.perf_counter()
+                        n_tables_streamed = 0
+                        n_answers_streamed = 0
+                        for (
+                            table_id,
+                            answer_list,
+                        ) in self.query_engine.find_answers_parallel(
+                            executor=ex,
+                            indexes=candidates,
+                            ex_x=query_x_values,
+                            ex_y=query_y_values,
+                            queries=query_values,
+                        ):
+                            n_tables_streamed += 1
+                            for untupled_answer in answer_list:
+                                if (
+                                    None in untupled_answer[1]
+                                    or "" in untupled_answer[1]
+                                ):
+                                    continue
+
+                                y_term = tuple(untupled_answer[1])
+                                answer = (
+                                    tuple(untupled_answer[0]),
+                                    tuple(untupled_answer[1]),
+                                )
+
+                                if answer not in answers:
+                                    finished_querying = False
+                                    answers[answer] = {
+                                        "score": 0.0,
+                                        "tables": set(),
+                                        "term": y_term,
+                                    }
+
+                                tables.setdefault(
+                                    table_id, {"score": 0.0, "answers": set()}
+                                )
+
+                                answers[answer]["tables"].add(table_id)
+                                tables[table_id]["answers"].add(answer)
+                                n_answers_streamed += 1
+
+                if t1:
+                    self._log(
+                        f"find_answers_parallel took {time.perf_counter() - t0:.3f}s "
+                        f"(tables_streamed={n_tables_streamed}, answers_added/seen={n_answers_streamed}, tables_total={len(tables)}, answers_total={len(answers)})",
+                        debug_timing,
                     )
-
-                    previously_seen_tables.update(c[0] for c in candidates)
-
-                    for (
-                        table_id,
-                        answer_list,
-                    ) in self.query_engine.find_answers_parallel(
-                        executor=ex,
-                        table_ids=candidates,
-                        queries=query_values,
-                    ):
-                        for untupled_answer in answer_list:
-                            if None in untupled_answer[1]:
-                                continue
-
-                            y_term = tuple(untupled_answer[1])
-                            answer = (
-                                tuple(untupled_answer[0]),
-                                tuple(untupled_answer[1]),
-                            )
-
-                            if answer not in answers:
-                                finished_querying = False
-                                answers[answer] = {
-                                    "score": 0.0,
-                                    "tables": set(),
-                                    "term": y_term,
-                                }
-
-                            tables.setdefault(
-                                table_id, {"score": 0.0, "answers": set()}
-                            )
-
-                            answers[answer]["tables"].add(table_id)
-                            tables[table_id]["answers"].add(answer)
 
                 tables = self.update_table_scores(
                     answers,
@@ -211,6 +294,12 @@ class WebTableRanker:
                         for x in zip(*rearranged_queries)
                     }
                     pprint(result)
+
+                iter_end = time.perf_counter()
+                self._log(
+                    f"EM iteration {iteration} END total={iter_end - iter_start:.3f}s",
+                    debug_timing,
+                )
 
         result = {
             x: [
