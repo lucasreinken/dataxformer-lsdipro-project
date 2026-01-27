@@ -218,7 +218,6 @@ class LoggingContext:
         project_name: str,
         entity: str | None,
         log_dir: Path | str | None = None,
-        seed: int = 2,
     ) -> None:
         """
         Initializes the logging context.
@@ -237,7 +236,7 @@ class LoggingContext:
         self.start_time = None
         self.end_time = None
         self.configs = configs
-        self.seed = seed
+        self.seed = configs[-1].seed if configs else 2
         self.project_name = project_name
         self.entity = entity
         self.dir = log_dir
@@ -417,6 +416,7 @@ class LoggingContext:
                 "TopAll_Acc",
                 "Answered",
             ]
+
             if len(self.results_data) > 0 and len(self.results_data[0]) > 7:
                 columns.append("Calc_Time")
 

@@ -1,44 +1,60 @@
 from concurrent.futures import as_completed
+from collections.abc import Iterator
 
 from src.database.mp_workers import worker_validate_and_find_answers
+from src.database.query_factory import QueryFactory
 
 
 class WebTableQueryEngine:
     def __init__(
         self,
-        config,
-        query_factory,
+        tau: int,
+        query_factory: QueryFactory,
         limit: int | None = 100,
         multi_hop: bool = False,
         print_query: bool = False,
+        use_fuzzy_matching: bool = False,
+        fuzzy_scorer: str = "ratio",
+        fuzzy_threshold: float = 0.95,
     ) -> None:
         """
         Initializes the WebTablesQuerryEngine.
 
         Args:
-            config,
-            query_factory,
-            limit: int = 100 (The maximum amount of tables that is returned in one search.)
-            multi_hop: bool = False (A flag that indicates if the multi-hop algorithm will be used.)
-            print_query: bool = False (A flag inicating if the queries and parameters will be printed.)
+            tau: int
+            query_factory: QuerryFactory
+            limit: int (Default: 100) (The maximum amount of tables that is returned in one search.)
+            multi_hop: bool (Default: False) (A flag that indicates if the multi-hop algorithm will be used.)
+            print_query: bool (Default: False) (A flag inicating if the queries and parameters will be printed.)
 
         Returns:
             None
         """
 
-        self.tau = config.tau
+        self.tau = tau
         self.query_factory = query_factory
         self.limit = limit
         self.multi_hop = multi_hop
         self.print_query = print_query
+        self.use_fuzzy_matching = use_fuzzy_matching
+        self.fuzzy_scorer = fuzzy_scorer
+        self.fuzzy_threshold = fuzzy_threshold
 
     def find_candidates(
-        self, x_cols, y_cols, previously_seen_tables: set | None = None
+        self,
+        x_cols: list[list[str]],
+        y_cols: list[list[str]],
+        previously_seen_tables: set | None = None,
     ) -> set:
         """
-        Non-parallel version:
-        1) get candidate (table_id, *x_col_ids, *y_col_ids) from find_xy_candidates
-        2) validate them with stable_row_val in a single call
+        Wrapper for QueryFactory.find_xy_candidates.
+        Args:
+            x_cols: list[list[str]]
+            y_cols: list[list[str]]
+            previously_seen_tables: set | None (Default: None)
+
+        Returns:
+            candidates: set
         """
 
         candidates = self.query_factory.find_xy_candidates(
@@ -48,7 +64,6 @@ class WebTableQueryEngine:
             multi_hop=self.multi_hop,
             limit=self.limit,
             previously_seen_tables=previously_seen_tables,
-            print_query=self.print_query,
         )
         return candidates
 
@@ -56,24 +71,44 @@ class WebTableQueryEngine:
         self,
         executor,
         indexes: set[tuple],
-        ex_x: list[list[str]],
-        ex_y: list[list[str]],
+        x_cols: list[list[str]],
+        y_cols: list[list[str]],
         queries: list[list[str]],
-    ):
+    ) -> Iterator[tuple[int, list]]:
+        """
+        Finds answers to the open queries in a distributed setting, performing as a generator.
+
+        Args:
+            executor
+            indexes: set[tuple]
+            x_cols: list[list[str]]
+            y_cols: list[list[str]]
+            queries: list[list[str]]
+
+        Yields:
+            tuple(table_id: int, answer_list: list)
+        """
         idx_list = list(indexes)
         if not idx_list:
             return
-            yield
 
         tasks = [
             executor.submit(
-                worker_validate_and_find_answers, idx, ex_x, ex_y, queries, self.tau
+                worker_validate_and_find_answers,
+                idx,
+                x_cols,
+                y_cols,
+                queries,
+                self.tau,
+                self.use_fuzzy_matching,
+                self.fuzzy_scorer,
+                self.fuzzy_threshold,
             )
             for idx in idx_list
         ]
 
-        for fut in as_completed(tasks):
-            res = fut.result()
-            if res is None:
+        for task in as_completed(tasks):
+            result = task.result()
+            if result is None:
                 continue
-            yield res
+            yield result

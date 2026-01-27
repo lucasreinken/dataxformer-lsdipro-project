@@ -20,8 +20,8 @@ class DirectDependencyVerifier:
                 with open(self.result_cache_file, "rb") as f:
                     return pickle.load(f)
             except EOFError:
-                return {}
-        return {}
+                return dict()
+        return dict()
 
     def _save_result_cache(self):
         with open(self.result_cache_file, "wb") as f:
@@ -38,7 +38,7 @@ class DirectDependencyVerifier:
     def verify_candidates(
         self, candidates, x_col_count, error_threshold=0.05, limit: int | None = None
     ):
-        results = []
+        results = list()
         for cand in candidates:
             if limit and len(results) >= limit:
                 break
@@ -57,7 +57,7 @@ class DirectDependencyVerifier:
             if df is None:
                 continue
 
-            valid_rhs = []
+            valid_rhs = list()
             df_clean = df.dropna(subset=lhs)
 
             if not df_clean.empty:
@@ -89,7 +89,6 @@ class DirectDependencyVerifier:
 
     def my_queue(
         self,
-        erg,
         cleaned_x,
         cleaned_y,
         tau,
@@ -104,17 +103,21 @@ class DirectDependencyVerifier:
             f"input_col_{i}": col_vals for i, col_vals in enumerate(cleaned_x)
         }  ###sollte noch anders aussehen
         df_input = pd.DataFrame(input_data_dict)
-        input_merge_cols = list(df_input.columns)
+
+        # Neu
+        df_input["is_example"] = True
+        input_merge_cols = [c for c in df_input.columns if c != "is_example"]
+
+        # Alt
+        ##input_merge_cols = list(df_input.columns)
 
         if previously_seen_tables is None:
-            previously_seen_tables = set()
-        erg_table_ids = set(r[0] for r in erg)
-        previously_seen_tables.update(erg_table_ids)  # T_E
+            previously_seen_tables = set()  # T_E
 
         if cleaned_y and isinstance(cleaned_y[0], list):
             flat_y = set(val for sublist in cleaned_y for val in sublist)
         else:
-            flat_y = set(cleaned_y if cleaned_y else [])
+            flat_y = set(cleaned_y if cleaned_y else list())
 
         # T_X <- QueryForTables(E.X)
         # Also enforcing T_X <- T_X / T_E
@@ -149,7 +152,14 @@ class DirectDependencyVerifier:
 
             # for all <T_p, Z> in current_table_paths do
             for prev_df, join_col_name in paths_to_process:
+                # Alt
                 selective_value = prev_df[join_col_name].dropna().unique().tolist()
+
+                # Neu
+                example_only_df = prev_df[prev_df["is_example"]]
+                selective_value = (
+                    example_only_df[join_col_name].dropna().unique().tolist()
+                )
 
                 if not selective_value:
                     continue
@@ -179,8 +189,17 @@ class DirectDependencyVerifier:
 
                 final_tables.extend(found)
                 current_table_paths.extend(next_hops)
+        # Alt
+        # return final_tables
 
-        return final_tables
+        # Neu
+        if not final_tables:
+            return pd.DataFrame()
+
+        master_df = pd.concat(final_tables, ignore_index=True)
+        master_df.drop_duplicates(inplace=True)
+
+        return master_df
 
     def tableJoinerInnterLoop(
         self,
@@ -192,9 +211,10 @@ class DirectDependencyVerifier:
         previously_seen,
         max_tables,
         iteration_index: int = 1,
+        print_merged_df: bool = True,
     ):
-        results = []
-        next_paths = []
+        results = list()
+        next_paths = list()
 
         x_col_count = len(left_join_cols)
 
@@ -220,14 +240,17 @@ class DirectDependencyVerifier:
                     df_right,
                     left_on=left_join_cols,
                     right_on=right_x_cols,
-                    how="inner",
+                    how="outer",  # "inner", ##Neu
                     suffixes=("", "_drop_candidate"),
                 )
 
                 if merged_df.empty:
                     continue
 
-                cols_to_remove = []
+                ##Neu
+                merged_df["is_example"] = merged_df["is_example"].fillna(False)
+
+                cols_to_remove = list()
                 for rc in right_x_cols:
                     if rc in merged_df.columns:
                         cols_to_remove.append(rc)
@@ -253,14 +276,23 @@ class DirectDependencyVerifier:
                 new_col_name = f"it{iteration_index}"
                 merged_df.rename(columns={actual_z_col: new_col_name}, inplace=True)
                 actual_z_col = new_col_name
-                try:
-                    found_values = merged_df[actual_z_col].unique()
-                except KeyError:
-                    continue
 
-                overlap_count = len(flat_y.intersection(found_values))
+                # Alt
+                # actual_z_col = new_col_name
+                # try:
+                #     found_values = merged_df[actual_z_col].unique()
+                # except KeyError:
+                #     continue
+                # overlap_count = len(flat_y.intersection(found_values))
 
-                print(merged_df)
+                ## Neu
+                example_rows = merged_df[merged_df["is_example"]]
+                found_values_examples = example_rows[new_col_name].dropna().unique()
+                overlap_count = len(flat_y.intersection(found_values_examples))
+
+                if print_merged_df:
+                    print(f"Table {table_ID} Overlap: {overlap_count}")
+
                 if overlap_count >= tau:
                     results.append(merged_df)
 

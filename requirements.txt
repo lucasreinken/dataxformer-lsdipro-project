@@ -8,3 +8,4 @@ vertica_python
 python-dotenv
 streamlit
 wandb
+rapidfuzz

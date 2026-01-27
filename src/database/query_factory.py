@@ -183,116 +183,6 @@ class QueryFactory:
             cur.execute(sql, params)
             return cur.fetchall()
 
-    def stable_row_val(
-        self,
-        index_list: list,
-        x_lists: list[list[tuple]],
-        y_lists: list[list[tuple]],
-        tau: int,
-        print_query: bool = False,
-    ):
-        """
-        Validates if the x and y of a given example are not only in the same DataFrame in their respective columns,
-        but also in the same row, for all examples.
-
-        Args:
-            index_list: list
-            x_lists: list[list[tuple]]
-            y_lists: list[list[tuple]]
-            tau: int
-            print_query: bool = False
-
-        Returns:
-            validated_results: list[tuple]
-        """
-
-        if not index_list:
-            return list()
-
-        row_count = len(next(iter(x_lists)))
-        x_len = len(x_lists)
-        y_len = len(y_lists)
-        len_cols = x_len + y_len
-
-        ex_pairs = [subelem for elem in zip(*(x_lists + y_lists)) for subelem in elem]
-
-        selects = ", ".join(
-            [
-                f"""%s::varchar as val_{self.get_prefix(idx, x_len)}"""
-                for idx in range(len_cols)
-            ]
-        )
-        joined_selects = " UNION ALL ".join([f"SELECT {selects}"] * row_count)
-
-        table_ids = list(set(idx[0] for idx in index_list))
-        table_id_placeholders = ", ".join(["%s"] * len(table_ids))
-
-        params = ex_pairs + table_ids
-
-        select_str = ", ".join(
-            [f"""{self.get_prefix(0, x_len)}.{self.table_column}"""]
-            + [
-                f"""{self.get_prefix(idx, x_len)}.{self.column_column}"""
-                for idx in range(len_cols)
-            ]
-        )
-
-        from_part = f"FROM {self.cells_table} {self.get_prefix(0, x_len)}"
-
-        joins = list()
-        conditions = list()
-        for idx in range(len_cols):
-            condition = f"{self.get_prefix(idx, x_len)}.{self.term_token_column} = e.val_{self.get_prefix(idx, x_len)}"
-            conditions.append(condition)
-
-            if idx != 0:
-                join_str = f"""
-                JOIN {self.cells_table} {self.get_prefix(idx, x_len)}
-                    ON {self.get_prefix(0, x_len)}.{self.table_column} = {self.get_prefix(idx, x_len)}.{self.table_column} 
-                    AND {self.get_prefix(0, x_len)}.{self.row_column} = {self.get_prefix(idx, x_len)}.{self.row_column}
-                """
-                joins.append(join_str)
-
-        conditions_str = " AND ".join(conditions)
-
-        sql = f"""
-            WITH Examples AS (
-                {joined_selects}
-            )
-            SELECT 
-                {select_str},
-                COUNT(*) as matches
-            {from_part}
-            {"".join(joins)}
-            JOIN Examples e
-                ON {conditions_str}
-            WHERE 
-                {self.get_prefix(0, x_len)}.{self.table_column} IN ({table_id_placeholders})
-            GROUP BY 
-                {select_str}
-            HAVING 
-                COUNT(*) >= {tau}
-        """
-
-        if print_query:
-            print(sql)
-            print(params)
-
-        validated_results = list()
-        candidates_set = set(tuple(idx) for idx in index_list)
-
-        with self.conn.cursor() as cur:
-            cur.execute(sql, params)
-            rows = cur.fetchall()
-
-            for row in rows:
-                result_tuple = tuple(row[:-1])
-
-                if result_tuple in candidates_set:
-                    validated_results.append(result_tuple)
-
-        return validated_results
-
     def get_table_content(
         self,
         table_id: int,
@@ -340,3 +230,167 @@ class QueryFactory:
         df_pivot = df_raw.pivot(index="row_id", columns="col_id", values="val")
 
         return df_pivot
+
+    def get_table_contents_batch(
+        self,
+        table_ids: list[int],
+        include_cols: tuple | list | None = None,
+        print_query: bool = False,
+    ) -> dict[int, pd.DataFrame]:
+        if not table_ids:
+            return dict()
+
+        params = list(table_ids)
+        placeholders = ", ".join(["%s"] * len(table_ids))
+
+        where_clause = f"WHERE {self.table_column} IN ({placeholders})"
+
+        if include_cols:
+            col_placeholders = ", ".join(["%s"] * len(include_cols))
+            where_clause += f" AND {self.column_column} IN ({col_placeholders})"
+            params.extend(include_cols)
+
+        sql = f"""
+        SELECT 
+            {self.table_column} as table_id,
+            {self.row_column} as row_id,
+            {self.column_column} as col_id,
+            {self.term_token_column} as val
+        FROM {self.cells_table}  /*+PROJS('public.inv_index_proj')*/
+        {where_clause}
+        ORDER BY {self.table_column}, {self.row_column}, {self.column_column}
+        """
+
+        if print_query:
+            print(sql)
+            print(params)
+
+        try:
+            df_raw = pd.read_sql(sql, self.conn, params=params)
+        except Exception as e:
+            print(f"Batch query failed: {e}")
+            return dict()
+
+        if df_raw.empty:
+            return dict()
+
+        result = dict()
+        for table_id, group in df_raw.groupby("table_id"):
+            try:
+                df_pivot = group.pivot(index="row_id", columns="col_id", values="val")
+                result[int(table_id)] = df_pivot
+            except Exception as e:
+                print(f"Warning: Failed to pivot table {table_id}. Error: {e}")
+                continue
+
+        return result
+
+    # def stable_row_val(
+    #     self,
+    #     index_list: list,
+    #     x_lists: list[list[tuple]],
+    #     y_lists: list[list[tuple]],
+    #     tau: int,
+    #     print_query: bool = False,
+    # ):
+    #     """
+    #     Validates if the x and y of a given example are not only in the same DataFrame in their respective columns,
+    #     but also in the same row, for all examples.
+
+    #     Args:
+    #         index_list: list
+    #         x_lists: list[list[tuple]]
+    #         y_lists: list[list[tuple]]
+    #         tau: int
+    #         print_query: bool = False
+
+    #     Returns:
+    #         validated_results: list[tuple]
+    #     """
+
+    #     if not index_list:
+    #         return list()
+
+    #     row_count = len(next(iter(x_lists)))
+    #     x_len = len(x_lists)
+    #     y_len = len(y_lists)
+    #     len_cols = x_len + y_len
+
+    #     ex_pairs = [subelem for elem in zip(*(x_lists + y_lists)) for subelem in elem]
+
+    #     selects = ", ".join(
+    #         [
+    #             f"""%s::varchar as val_{self.get_prefix(idx, x_len)}"""
+    #             for idx in range(len_cols)
+    #         ]
+    #     )
+    #     joined_selects = " UNION ALL ".join([f"SELECT {selects}"] * row_count)
+
+    #     table_ids = list(set(idx[0] for idx in index_list))
+    #     table_id_placeholders = ", ".join(["%s"] * len(table_ids))
+
+    #     params = ex_pairs + table_ids
+
+    #     select_str = ", ".join(
+    #         [f"""{self.get_prefix(0, x_len)}.{self.table_column}"""]
+    #         + [
+    #             f"""{self.get_prefix(idx, x_len)}.{self.column_column}"""
+    #             for idx in range(len_cols)
+    #         ]
+    #     )
+
+    #     from_part = f"FROM {self.cells_table} {self.get_prefix(0, x_len)}"
+
+    #     joins = list()
+    #     conditions = list()
+    #     for idx in range(len_cols):
+    #         condition = f"{self.get_prefix(idx, x_len)}.{self.term_token_column} = e.val_{self.get_prefix(idx, x_len)}"
+    #         conditions.append(condition)
+
+    #         if idx != 0:
+    #             join_str = f"""
+    #             JOIN {self.cells_table} {self.get_prefix(idx, x_len)}
+    #                 ON {self.get_prefix(0, x_len)}.{self.table_column} = {self.get_prefix(idx, x_len)}.{self.table_column}
+    #                 AND {self.get_prefix(0, x_len)}.{self.row_column} = {self.get_prefix(idx, x_len)}.{self.row_column}
+    #             """
+    #             joins.append(join_str)
+
+    #     conditions_str = " AND ".join(conditions)
+
+    #     sql = f"""
+    #         WITH Examples AS (
+    #             {joined_selects}
+    #         )
+    #         SELECT
+    #             {select_str},
+    #             COUNT(*) as matches
+    #         {from_part}
+    #         {"".join(joins)}
+    #         JOIN Examples e
+    #             ON {conditions_str}
+    #         WHERE
+    #             {self.get_prefix(0, x_len)}.{self.table_column} IN ({table_id_placeholders})
+    #         GROUP BY
+    #             {select_str}
+    #         HAVING
+    #             COUNT(*) >= {tau}
+    #     """
+
+    #     if print_query:
+    #         print(sql)
+    #         print(params)
+
+    #     validated_results = list()
+    #     candidates_set = set(tuple(idx) for idx in index_list)
+
+    #     with self.conn.cursor() as cur:
+    #         cur.execute(sql, params)
+    #         rows = cur.fetchall()
+
+    #         for row in rows:
+    #             result_tuple = tuple(row[:-1])
+
+    #             if result_tuple in candidates_set:
+    #                 validated_results.append(result_tuple)
+
+    #     return validated_results

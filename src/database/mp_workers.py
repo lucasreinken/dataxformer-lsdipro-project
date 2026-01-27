@@ -20,7 +20,9 @@ def init_worker_qf(vertica_config: dict):
 # --------------------------
 # worker functions
 # --------------------------
-def worker_validate_and_find_answers(index, ex_x, ex_y, queries, tau):
+def worker_validate_and_find_answers(
+    index, ex_x, ex_y, queries, tau, use_fuzzy_matching, fuzzy_scorer, fuzzy_threshold
+):
     """
     index: (table_id, *x_col_ids, *y_col_ids)
     Returns (table_id, answer_list) or None if validation fails / no table.

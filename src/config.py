@@ -1,4 +1,22 @@
 from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class VerticaConfig:
+    cells_table = "main_tokenized"
+    tables_table = None
+    columns_table = "columns_tokenized"
+    table_column = "tableid"
+    column_column = "colid"
+    row_column = "rowid"
+    term_column = "term"
+    term_token_column = "tokenized"
+    table_url_column = None
+    table_title_column = None
+    table_weight_column = None
+    header_column = "header"
+    header_token_column = "header_tokenized"
 
 
 @dataclass
@@ -41,71 +59,79 @@ class IndexingConfig:
             "with",
         ]
     )
-    stemmer: str | None = None
-    create_ngrams: bool = False
-    ngram_size: int = 2
-    min_word_len: int = 0
-    read_path: str = "C:/Studium/LSDIPro/DataXFormer/data/dresden_test"
+    stemmer: Optional[str] = None
+    read_path: str = "./data/dresden_test"  # Relativer Pfad ist besser!
 
 
 @dataclass
-class QueryingConfig:
-    tau = 2
-
-
-@dataclass
-class RankingConfig:
-    epsilon = 0.001
-    alpha = 0.99
-    table_prior = 0.5
-    topk = 1
-    max_workers: int = 4
-    max_requery_iterations = 2
+class RankerConfig:
+    epsilon: float = 0.001
+    alpha: float = 0.999
+    table_prior: float = 0.5
+    topk: int = 1
+    tau: int = 2
+    parallel_workers = 4
+    max_requery_iterations: int = 0
     max_requery_answers: int = 50
+    use_fuzzy_matching: bool = True
+    fuzzy_scorer: str = "max3"
+    fuzzy_threshold: float = 0.95
+    max_iterations: int = float("inf")
 
 
 @dataclass
-class VerticaConfig:
-    cells_table = "main_tokenized"
-    tables_table = None
-    columns_table = "columns_tokenized"
-    table_column = "tableid"
-    column_column = "colid"
-    row_column = "rowid"
-    term_column = "term"
-    term_token_column = "tokenized"
-    table_url_column = None
-    table_title_column = None
-    table_weight_column = None
-    header_column = "header"
-    header_token_column = "header_tokenized"
-
-
-@dataclass
-class TestingConfig:
-    project_name = "DataXFormerTest"
-    entity = "DataXFormer"
-    repeats: int = 5
-    k: int = 5  ##topk
-    max_workers: int = 4
+class ExperimentConfig:
+    project_name: str = "DataXFormerTest"
+    entity: str = "DataXFormer"
+    repeats: int = 1
+    parallel_runs: int = 4
+    count_of_examples: int = 5
+    k: int = 1
     return_time: bool = True
+    seed: int = 2
+    preindexed: bool = True
 
 
-def get_default_indexing_config() -> IndexingConfig:
-    return IndexingConfig()
+@dataclass
+class MultiHopConfig:
+    """Configuration for multi-hop table joining."""
+
+    max_path_len: int = 3
+    max_tables: int = 25
+    adaptive_limits: bool = True
+
+    fd_threshold: float = 0.95
+    error_threshold_for_fd: float = 0.05
+    use_parallel_fd: bool = True
+    max_workers_multi: int = 4
+
+    auto_detect_numeric: bool = True
+    restrict_nums: bool = True
+    metric_precision: float = 0.1
+    none_precision: float = 0.1
+    min_word_len: int = 2
+    strict_uniqueness_in_df: bool = False
+
+    use_fuzzy_y_match: bool = False
+    fuzzy_scorer_multi: str = "ratio"
+    fuzzy_threshold_multi: float = 0.95
+
+    large_df_threshold: int = 10000
+    sample_size: int = 5000
+    max_paths_to_keep: int = 20
+
+    adaptive_reduction_factor: int = 2
+    overlap_threshold: float = 0.5
+    threshold_for_numeric_cols: float = 0.5
+
+    print_further_information: bool = False
+    reset_counters: bool = True
 
 
-def get_default_ranking_config() -> RankingConfig:
-    return RankingConfig()
-
-
-def get_default_querying_config() -> QueryingConfig:
-    return QueryingConfig()
-
-
-def get_default_vertica_config() -> VerticaConfig:
-    return VerticaConfig()
-
-
-def get_default_testing_config() -> TestingConfig:
-    return TestingConfig()
+@dataclass
+class MasterConfig:
+    vertica: VerticaConfig = field(default_factory=VerticaConfig)
+    indexing: IndexingConfig = field(default_factory=IndexingConfig)
+    ranker: RankerConfig = field(default_factory=RankerConfig)
+    experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
+    multi_hop: MultiHopConfig = field(default_factory=MultiHopConfig)

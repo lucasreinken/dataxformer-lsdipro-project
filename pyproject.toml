@@ -16,6 +16,7 @@ dependencies = [
     "vertica_python",
     "dotenv", 
     "streamlit",
+    "rapidfuzz"
 ]
 
 # Development and research tool
@@ -24,6 +25,5 @@ dev-dependencies = [
     "pytest",
     "pytest-cov",
     "ruff",
-    "black",
     "ipykernel",
 ]
