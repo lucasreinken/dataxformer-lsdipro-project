@@ -7,15 +7,11 @@ import random
 
 from src.database.query_factory import QueryFactory
 from src.web_tables.querying import WebTableQueryEngine
-from src.database.mp_workers import init_worker_qf
+from src.utils.mp_workers import init_worker_qf
 
 from pprint import pprint
 
 from src.utils.fuzzy_matching import fuzzy_tuple_match
-
-
-###Multi-Hop Import:
-from src.database.better_fd import DirectDependencyVerifier
 
 
 class WebTableRanker:
@@ -39,6 +35,7 @@ class WebTableRanker:
         self.topk = config.ranker.topk
         self.max_requery_answers = config.ranker.max_requery_answers
         self.use_fuzzy_matching = config.ranker.use_fuzzy_matching
+        self.use_majority_voting = config.ranker.use_majority_voting
         self.fuzzy_scorer = config.ranker.fuzzy_scorer
         self.fuzzy_threshold = config.ranker.fuzzy_threshold
         self.max_workers = config.ranker.parallel_workers
@@ -46,11 +43,7 @@ class WebTableRanker:
 
         self.vertica_config = config.vertica
         self.query_factory = QueryFactory(self.vertica_config)
-        self.query_engine = WebTableQueryEngine(config.ranker.tau, self.query_factory)
-        self.tau = config.ranker.tau
-
-        ####Multi-Hop erstmal einfach mit qf
-        self.fd_verifier = DirectDependencyVerifier(self.query_factory)
+        self.query_engine = WebTableQueryEngine(config, self.query_factory)
 
     # ---------- debug helpers ----------
     @staticmethod
@@ -96,6 +89,8 @@ class WebTableRanker:
         old_scores = dict()
         old_y_values = list()
         old_query_y_values = list()
+        answers_by_x = {}
+        tables_by_x = {}
 
         answers = {
             (tuple(col_x), tuple(col_y)): {"score": 1.0, "tables": set(), "term": None}
@@ -191,12 +186,10 @@ class WebTableRanker:
                     if x_values and len(x_values[0]) > self.max_requery_answers:
                         n_cols = len(x_values[0])
 
-                        # randomly choose which column-pairs to keep
                         keep_idx = random.sample(
                             range(n_cols), self.max_requery_answers
                         )
 
-                        # slice each column-list consistently
                         query_x_values = [
                             [row[i] for i in keep_idx] for row in x_values
                         ]
@@ -227,19 +220,6 @@ class WebTableRanker:
                             debug_timing,
                         )
                         previously_seen_tables.update(c[0] for c in candidates)
-
-                        ####Hier teste ich Multi-Hop!!!
-
-                        # multi_hop_erg = self.fd_verifier.my_queue(cleaned_x = x_values,
-                        #                                           cleaned_y = y_values,
-                        #                                           tau = self.tau,
-                        #                                           previously_seen_tables=previously_seen_tables,
-                        #                                           max_path_len=3,
-                        #                                           max_tables=50,
-                        #                                           )
-
-                        ####Hier endet mein Test, der Rest ist von dir!!!!
-
                         t1 = time.perf_counter()
                         n_tables_streamed = 0
                         n_answers_streamed = 0
@@ -252,6 +232,7 @@ class WebTableRanker:
                             x_cols=query_x_values,
                             y_cols=query_y_values,
                             queries=query_values,
+                            previously_seen_tables=previously_seen_tables,
                         ):
                             n_tables_streamed += 1
                             for untupled_answer in answer_list:
@@ -289,8 +270,10 @@ class WebTableRanker:
                                         "tables": set(),
                                         "term": y_term,
                                     }
+                                    answers_by_x.setdefault(
+                                        canonical_answer[0], set()
+                                    ).add(canonical_answer)
 
-                                    # keep both indices in sync (NO defaultdict)
                                     x_to_existing_ys.setdefault(
                                         canonical_answer[0], []
                                     ).append(canonical_answer[1])
@@ -303,6 +286,7 @@ class WebTableRanker:
 
                                 answers[answer]["tables"].add(table_id)
                                 tables[table_id]["answers"].add(answer)
+                                tables_by_x.setdefault(answer[0], set()).add(table_id)
                                 n_answers_streamed += 1
 
                 if t1:
@@ -312,16 +296,29 @@ class WebTableRanker:
                         debug_timing,
                     )
 
-                tables = self.update_table_scores(
-                    answers=answers,
-                    tables=tables,
-                )
+                if self.use_majority_voting:
+                    answers = self.update_answer_scores_majority(
+                        answers=answers,
+                        answers_by_x=answers_by_x,
+                        rearranged_queries=rearranged_queries,
+                        print_winner=print_iterations,
+                    )
 
-                answers = self.update_answer_scores(
-                    answers=answers,
-                    tables=tables,
-                    rearranged_queries=rearranged_queries,
-                )
+                else:
+                    tables = self.update_table_scores(
+                        answers=answers,
+                        tables=tables,
+                        print_table_score=print_iterations,
+                    )
+
+                    answers = self.update_answer_scores(
+                        answers=answers,
+                        tables=tables,
+                        answers_by_x=answers_by_x,
+                        tables_by_x=tables_by_x,
+                        rearranged_queries=rearranged_queries,
+                        print_prob_of_none=print_iterations,
+                    )
 
                 if finished_querying and old_scores:
                     delta_score = sum(
@@ -385,36 +382,46 @@ class WebTableRanker:
 
         total_possible_best_score = sum(x_best_score.values())
 
+        # for all t ∈ tables do
         for table_id, table_info in tables.items():
+            # good ← 0
             good = 0.0
+            # bad ← 0
             bad = 0.0
+            # coveredXs ← {} //holds example x’s appearing in t
             covered_query_answers_x = set()
             table_covered_best_sum = 0.0
 
             answer_set = table_info.get("answers", set())
+            # for all answer(x, y) ∈ t do
             for table_answer in answer_set:
                 x, _ = table_answer
 
                 if x not in covered_query_answers_x:
+                    # coveredXs ← coveredXs ∪ {x}
                     covered_query_answers_x.add(x)
                     table_covered_best_sum += x_best_score[x]
 
+                # score ← GetScore(x, y)
                 answer_score = answers[table_answer]["score"]
+                # if IsMax(score, x) then
                 if answer_score == x_best_score[x]:
+                    # good ← good + score
                     good += answer_score
+                # else
                 else:
+                    # bad ← bad + 1
                     bad += 1
 
+            # unseen_X ← ∑_{x ∉ covered_X, (x,y) ∈ answers} max_y score(x,y)
             unseen_x = total_possible_best_score - table_covered_best_sum
 
             denominator = (self.table_prior * good) + (1 - self.table_prior) * (
                 bad + unseen_x
             )
 
-            if denominator > 0:
-                table_score = self.alpha * ((self.table_prior * good) / denominator)
-            else:
-                table_score = 0.0
+            # score(t) ← α · (prior · good) / (prior · good + (1 − prior) · (bad + unseenX))
+            table_score = self.alpha * ((self.table_prior * good) / denominator)
 
             if print_table_score:
                 print(
@@ -429,6 +436,8 @@ class WebTableRanker:
         self,
         answers: dict,
         tables: dict,
+        answers_by_x: dict,
+        tables_by_x: dict,
         rearranged_queries: list[list[str]],
         print_prob_of_none: bool = False,
     ) -> dict:
@@ -447,39 +456,82 @@ class WebTableRanker:
         if print_prob_of_none:
             print("")
 
+        # score(x, y) := 1
         for _, info in answers.items():
             info["score"] = 1.0
 
-        q_cols = list(zip(*rearranged_queries))
-        for x_q in q_cols:
-            x_answers = {(x, y) for (x, y) in answers if x == x_q}
+        # for all x ∈ X do
+        for x_q, x_answers in answers_by_x.items():
+            # A ← answers.getAnswers(x)
 
-            tables_for_x = {
-                table_id
-                for (x, _), info in answers.items()
-                if x == x_q
-                for table_id in info["tables"]
-            }
+            tables_for_x = tables_by_x[x_q]
 
+            # scoreOfNone ← 1
             score_of_none = 1.0
 
+            # for all table ∈ answers.getT ables(x) do
             for table_id in tables_for_x:
                 score_of_none *= 1.0 - tables[table_id]["score"]
 
+                # for all (x, y) ∈ A do
                 for answer in x_answers:
+                    # if table supports (x, y) then
                     if answer in tables[table_id]["answers"]:
+                        # score(x, y) ← score(x, y) · table.score
                         answers[answer]["score"] *= tables[table_id]["score"]
+                    # else
                     else:
+                        # score(x, y) ← score(x, y) · (1 − table.score)
                         answers[answer]["score"] *= 1 - (tables[table_id]["score"])
 
             denominator = score_of_none + sum(
                 (answers[answer]["score"] for answer in x_answers)
             )
 
+            # for all (x, y) ∈ A do
             for answer in x_answers:
+                # score(x, y) <- score(x, y) / (score_of_none + Σ_{(x,y) in A} score(x, y))
                 answers[answer]["score"] /= denominator
 
             if print_prob_of_none:
                 print(f"Probability of None for {x_q}: {score_of_none / denominator}")
+
+        return answers
+
+    def update_answer_scores_majority(
+        self,
+        answers: dict,
+        answers_by_x: dict,
+        rearranged_queries: list[list[str]],
+        print_winner: bool,
+    ) -> dict:
+        """
+        For each x:
+        score(x,y)=1 for the y with the most supporting tables (ties broken deterministically)
+        score(x,y)=0 for all other y
+        Support is simply len(answers[(x,y)]['tables']).
+        """
+
+        for info in answers.values():
+            info["score"] = 0.0
+
+        for x_q, x_answers in answers_by_x.items():
+            best = None
+            best_support = -1
+
+            for ans in x_answers:
+                support = len(answers[ans]["tables"])
+                if support > best_support:
+                    best_support = support
+                    best = ans
+                elif support == best_support and best is not None:
+                    if ans[1] < best[1]:
+                        best = ans
+
+            if best is not None:
+                answers[best]["score"] = 1.0
+
+            if print_winner:
+                print(f"[MAJ] x={x_q} winner={best} support={best_support}")
 
         return answers

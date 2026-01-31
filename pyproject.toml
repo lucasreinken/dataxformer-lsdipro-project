@@ -16,14 +16,15 @@ dependencies = [
     "vertica_python",
     "dotenv", 
     "streamlit",
+    "wandb",
     "rapidfuzz"
 ]
 
 # Development and research tool
-[tool.uv]
-dev-dependencies = [
-    "pytest",
-    "pytest-cov",
-    "ruff",
-    "ipykernel",
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "ruff",
+  "ipykernel",
 ]

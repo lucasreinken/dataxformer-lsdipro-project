@@ -1,22 +1,12 @@
 from concurrent.futures import as_completed
-from collections.abc import Iterator
 
-from src.database.mp_workers import worker_validate_and_find_answers
+from src.utils.mp_workers import worker_validate_and_find_answers
 from src.database.query_factory import QueryFactory
+from src.database.multi_hop import DirectDependencyVerifier
 
 
 class WebTableQueryEngine:
-    def __init__(
-        self,
-        tau: int,
-        query_factory: QueryFactory,
-        limit: int | None = 100,
-        multi_hop: bool = False,
-        print_query: bool = False,
-        use_fuzzy_matching: bool = False,
-        fuzzy_scorer: str = "ratio",
-        fuzzy_threshold: float = 0.95,
-    ) -> None:
+    def __init__(self, config, query_factory: QueryFactory) -> None:
         """
         Initializes the WebTablesQuerryEngine.
 
@@ -31,14 +21,16 @@ class WebTableQueryEngine:
             None
         """
 
-        self.tau = tau
         self.query_factory = query_factory
-        self.limit = limit
-        self.multi_hop = multi_hop
-        self.print_query = print_query
-        self.use_fuzzy_matching = use_fuzzy_matching
-        self.fuzzy_scorer = fuzzy_scorer
-        self.fuzzy_threshold = fuzzy_threshold
+        self.tau = config.querying.tau
+        self.table_limit = config.querying.table_limit
+        self.use_multi_hop = config.querying.use_multi_hop
+        self.print_query = config.querying.print_query
+
+        if self.use_multi_hop:
+            self.fd_verifier = DirectDependencyVerifier(
+                self.query_factory, config.multi_hop, self.tau, config.experiment.seed
+            )
 
     def find_candidates(
         self,
@@ -61,9 +53,9 @@ class WebTableQueryEngine:
             x_cols=x_cols,
             y_cols=y_cols,
             tau=self.tau,
-            multi_hop=self.multi_hop,
-            limit=self.limit,
+            table_limit=self.table_limit,
             previously_seen_tables=previously_seen_tables,
+            print_query=self.print_query,
         )
         return candidates
 
@@ -74,20 +66,22 @@ class WebTableQueryEngine:
         x_cols: list[list[str]],
         y_cols: list[list[str]],
         queries: list[list[str]],
-    ) -> Iterator[tuple[int, list]]:
-        """
-        Finds answers to the open queries in a distributed setting, performing as a generator.
+        previously_seen_tables=None,
+    ):
+        if self.use_multi_hop:
+            mh_df = self.fd_verifier.my_queue(
+                cleaned_x=x_cols,
+                cleaned_y=y_cols,
+                previously_seen_tables=previously_seen_tables,
+                print_query=self.print_query,
+            )
+            if mh_df is not None and not mh_df.empty:
+                x_names = [c for c in mh_df.columns if c.startswith("x_col_")]
+                for _, r in mh_df.iterrows():
+                    x_part = [r[c] for c in x_names]
+                    y_part = [r["y_col_0"]]
+                    yield (-1, [[x_part, y_part]])
 
-        Args:
-            executor
-            indexes: set[tuple]
-            x_cols: list[list[str]]
-            y_cols: list[list[str]]
-            queries: list[list[str]]
-
-        Yields:
-            tuple(table_id: int, answer_list: list)
-        """
         idx_list = list(indexes)
         if not idx_list:
             return
@@ -100,9 +94,7 @@ class WebTableQueryEngine:
                 y_cols,
                 queries,
                 self.tau,
-                self.use_fuzzy_matching,
-                self.fuzzy_scorer,
-                self.fuzzy_threshold,
+                print_query=self.print_query,
             )
             for idx in idx_list
         ]

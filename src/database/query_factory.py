@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 
 class QueryFactory:
-    def __init__(self, config, logger=None) -> None:
+    def __init__(self, config) -> None:
         load_dotenv()
 
         self.host = os.getenv("VERTICA_HOST")
@@ -31,8 +31,6 @@ class QueryFactory:
         self.header_column = config.header_column
         self.header_token_column = config.header_token_column
 
-        self.logger = logger if logger else None
-
     def __enter__(self):
         self.conn = vertica_python.connect(
             host=self.host,
@@ -47,8 +45,6 @@ class QueryFactory:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
-        if self.logger:
-            self.logger.info("Closed Vertica connection.")
 
     def close(self):
         self.conn.close()
@@ -81,7 +77,7 @@ class QueryFactory:
         y_cols: list[list[str]] | None,
         tau: int,
         multi_hop: bool = False,
-        limit: int | None = 100,  # None,
+        table_limit: int | None = 100,
         previously_seen_tables: set | None = None,
         print_query: bool = False,
     ):
@@ -93,7 +89,7 @@ class QueryFactory:
             y_cols: list[list[str]] | None
             tau: int
             multi_hop: bool = False
-            limit: int | None = None
+            table_limit: int | None = None
             previously_seen_tables: set | None = None
             print_query: bool = False
 
@@ -170,8 +166,8 @@ class QueryFactory:
         )
         sql_parts = [a_part, b_part, c_part, d_part]
 
-        if limit:
-            sql_parts.append(f"\nLIMIT {limit}")
+        if table_limit:
+            sql_parts.append(f"\nlimit {table_limit}")
 
         sql = "".join(sql_parts) + ";"
 

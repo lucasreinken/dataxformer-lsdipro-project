@@ -33,9 +33,10 @@ def eval_exercise(
     ranker: WebTableRanker,
     indexer: WebTableIndexer | None,
     repeats: int,
-    k: int,
     return_time: bool,
     print_evaluation: bool = False,
+    print_iterations: bool = False,
+    debug_timing: bool = False,
 ) -> dict:
     """
     Evaluation loop for one exercise.
@@ -89,23 +90,38 @@ def eval_exercise(
         if return_time:
             starttime = endtime = perf_counter()
 
-        results = ranker.expectation_maximization(ex_x, ex_y, queries)
+        results = ranker.expectation_maximization(
+            ex_x, ex_y, queries, print_iterations, debug_timing
+        )
 
         if return_time:
             endtime = perf_counter()
             calc_time = endtime - starttime
-            run_eval = evaluate_results(results, query_keys, y_true, k, calc_time)
+            run_eval = evaluate_results(results, query_keys, y_true, calc_time)
         else:
-            run_eval = evaluate_results(results, query_keys, y_true, k)
+            run_eval = evaluate_results(results, query_keys, y_true)
 
         list_of_metrics.append(run_eval)
 
         if print_evaluation:
             print(run_eval)
 
-    metrics = dict()
+    metrics = {}
+
+    answered_mask = [m.get("answered_rate", 0) > 0 for m in list_of_metrics]
+    answered_count = sum(answered_mask)
+
+    if answered_count == 0:
+        return None
+
+    metrics["runs_with_answers"] = answered_count
+
     for key in list_of_metrics[0].keys():
-        valid_values = [m[key] for m in list_of_metrics if m.get(key) is not None]
+        valid_values = [
+            m[key]
+            for m, has_ans in zip(list_of_metrics, answered_mask)
+            if has_ans and m.get(key) is not None
+        ]
         if valid_values:
             metrics[key] = np.mean(valid_values)
 
@@ -142,8 +158,10 @@ def run_single_exercise(
                 ranker=ranker,
                 indexer=indexer,
                 repeats=config.experiment.repeats,
-                k=config.experiment.k,
                 return_time=config.experiment.return_time,
+                print_evaluation=config.experiment.print_evaluation,
+                print_iterations=config.ranker.print_iterations,
+                debug_timing=config.ranker.debug_timing,
             )
         return name, metrics
     except Exception as e:
@@ -177,7 +195,6 @@ def evaluate_results(
     results: dict,
     queries: list,
     ground_truth: list,
-    k: int,
     calc_time: float | None = None,
 ) -> dict:
     """
@@ -197,7 +214,8 @@ def evaluate_results(
 
     true_positive = 0
     answered = 0
-    topk_found = 0
+    top1_found = 0
+    top5_found = 0
     topall_found = 0
     total_queries = len(queries)
 
@@ -214,24 +232,25 @@ def evaluate_results(
         correct_y = normalize(ground_truth[idx])
         best_pred = normalize(sorted_results[0][0])
 
-        if correct_y == best_pred:  ####Hier
+        # --- Top 1 ---
+        if correct_y == best_pred:
             true_positive += 1
-            topk_found += 1
-            topall_found += 1
-        else:
-            preds_k = [normalize(result[0]) for result in sorted_results[:k]]
-            if correct_y in preds_k:
-                topk_found += 1
-                topall_found += 1
-            else:
-                all_preds = [normalize(result[0]) for result in sorted_results]
-                if correct_y in all_preds:
-                    topall_found += 1
+            top1_found += 1
 
-    precision = true_positive / answered if answered > 0 else 0.0  ###tp / (tp + fp)
+        # --- Top 5 ---
+        preds_5 = [normalize(result[0]) for result in sorted_results[:5]]
+        if correct_y in preds_5:
+            top5_found += 1
+
+        # --- Anywhere in candidate list ---
+        all_preds = [normalize(result[0]) for result in sorted_results]
+        if correct_y in all_preds:
+            topall_found += 1
+
+    precision = true_positive / answered if answered > 0 else 0.0  # tp / (tp + fp)
     recall = (
         true_positive / total_queries if total_queries > 0 else 0.0
-    )  ###tp / (tp + fn)
+    )  # tp / (tp + fn)
 
     if (precision + recall) > 0:
         f1_score = 2 * (precision * recall) / (precision + recall)
@@ -242,7 +261,8 @@ def evaluate_results(
         "precision": precision,
         "recall": recall,
         "f1_score": f1_score,
-        "topk_acc": topk_found / total_queries,
+        "top1_acc": top1_found / total_queries,
+        "top5_acc": top5_found / total_queries,
         "topall_acc": topall_found / total_queries,
         "answered_rate": answered / total_queries,
     }
@@ -291,17 +311,23 @@ def full_loop(
 
                 for ex_num, future in enumerate(as_completed(futures), 1):
                     name, metrics = future.result()
-                    print(metrics)
+                    title = name.replace("_", " & ").replace("2", " → ")
+
+                    if metrics is None:
+                        info_msg = f"Finished EX {ex_num}/{num_ex} {title}: no answers produced"
+                        ctx.info(info_msg)
+                        continue
 
                     ctx.add_eval_result(name, metrics)
 
-                    title = name.replace("_", " & ").replace("2", " → ")
-                    info_msg = (
-                        f"Finished EX {ex_num}/{num_ex} {title}: "
-                        f"precision {metrics['precision']:.2f}, "
-                        f"recall {metrics['recall']:.2f}"
+                    metric_parts = []
+                    for k, v in metrics.items():
+                        if isinstance(v, (int, float)):
+                            metric_parts.append(f"{k} {v:.2f}")
+
+                    info_msg = f"Finished EX {ex_num}/{num_ex} {title}: " + ", ".join(
+                        metric_parts
                     )
-                    print(info_msg)
 
                     if config.experiment.return_time and "calc_time" in metrics:
                         info_msg += f", calc_time: {metrics['calc_time']:.2f}"
@@ -314,7 +340,3 @@ def full_loop(
             )
             wandb.finish(exit_code=1)
             raise
-
-            ####Metrics zeigen, dass wir die Tables schneller löschen müssten um RAM freizugeben.
-            ###Blocking in EM
-            ###Maybe this a as a tool to an agent.

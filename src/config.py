@@ -60,36 +60,46 @@ class IndexingConfig:
         ]
     )
     stemmer: Optional[str] = None
-    read_path: str = "./data/dresden_test"  # Relativer Pfad ist besser!
+    read_path: str = "./data/dresden_test"
 
 
 @dataclass
 class RankerConfig:
-    epsilon: float = 0.001
-    alpha: float = 0.999
+    epsilon: float = 0.01
+    alpha: float = 0.99
     table_prior: float = 0.5
     topk: int = 1
-    tau: int = 2
     parallel_workers = 4
-    max_requery_iterations: int = 0
+    max_requery_iterations: int = 2
     max_requery_answers: int = 50
     use_fuzzy_matching: bool = True
+    use_majority_voting: bool = False
     fuzzy_scorer: str = "max3"
     fuzzy_threshold: float = 0.95
     max_iterations: int = float("inf")
+    print_iterations: bool = False
+    debug_timing: bool = False
+
+
+@dataclass
+class QueryConfig:
+    tau: int = 2
+    table_limit: int = 100
+    use_multi_hop: bool = False
+    print_query: bool = False
 
 
 @dataclass
 class ExperimentConfig:
     project_name: str = "DataXFormerTest"
     entity: str = "DataXFormer"
-    repeats: int = 1
+    repeats: int = 5
     parallel_runs: int = 4
     count_of_examples: int = 5
-    k: int = 1
     return_time: bool = True
     seed: int = 2
     preindexed: bool = True
+    print_evaluation: bool = False
 
 
 @dataclass
@@ -116,7 +126,7 @@ class MultiHopConfig:
     fuzzy_scorer_multi: str = "ratio"
     fuzzy_threshold_multi: float = 0.95
 
-    large_df_threshold: int = 10000
+    large_df_threshold: int = 100000
     sample_size: int = 5000
     max_paths_to_keep: int = 20
 
@@ -133,5 +143,6 @@ class MasterConfig:
     vertica: VerticaConfig = field(default_factory=VerticaConfig)
     indexing: IndexingConfig = field(default_factory=IndexingConfig)
     ranker: RankerConfig = field(default_factory=RankerConfig)
+    querying: QueryConfig = field(default_factory=QueryConfig)
     experiment: ExperimentConfig = field(default_factory=ExperimentConfig)
     multi_hop: MultiHopConfig = field(default_factory=MultiHopConfig)

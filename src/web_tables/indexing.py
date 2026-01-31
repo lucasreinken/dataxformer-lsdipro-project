@@ -12,12 +12,6 @@ import nltk
 nltk.download("punkt")
 nltk.download("punkt_tab")
 
-# TODO: Implement tests for everything
-
-# TODO: download stopwords from nltk?
-
-# BREAK IT DOWN INTO TOKENIZER CLASS AND OTHER FUNCTIONS (LIKE CREATE_PROJECTIONS)?
-
 
 class NoOpStemmer:
     def stem(self, x):
@@ -26,7 +20,6 @@ class NoOpStemmer:
 
 class WebTableIndexer:
     def __init__(self, config):
-        # Known stemmers
         stemmer_map = {
             "porter": PorterStemmer,
         }
@@ -34,7 +27,6 @@ class WebTableIndexer:
         if config.stemmer is None:
             self.stemmer = NoOpStemmer()
         else:
-            # Validate + construct the stemmer
             if config.stemmer not in stemmer_map:
                 raise ValueError(
                     f"Unknown stemmer: {config.stemmer}."
@@ -43,8 +35,6 @@ class WebTableIndexer:
 
             self.stemmer = stemmer_map[config.stemmer]()
 
-        # Stem stopwords if present
-        # TODO: Stem here?
         if config.stop_words:
             self.stopwords = [self.stem(stop_word) for stop_word in config.stop_words]
         else:
@@ -54,12 +44,6 @@ class WebTableIndexer:
         # self.batch_size = config.batch_size
 
         self.read_path = Path(config.read_path)
-
-    # TODO: where is cache really useful?
-    ###### Der Cahce wurde eingeführt, um beim Stemming Prozess für die Generierung der Projections,
-    ###### Was unsere längste Rechenleistung ist, einiges an Arbeit wegzunehmen.
-    ##### Während "Inference" - nenne ich das ganze jetzt mal - ist das total egal. In 1 zu 1 beziehungen sollten werte
-    ##### Eh unique sein. Das where ist beim Aufsetzen der Projections.
 
     def tokenize_list(self, in_list: list) -> list:
         tokenized_col = list()
@@ -71,9 +55,6 @@ class WebTableIndexer:
 
     # @cache
     def tokenize(self, text: str) -> str:
-        # TODO: Docstring
-        #### Brauch keinen Docstring, das ist ein Tokenizer. Was macht der wohl?
-
         if not isinstance(text, str):
             text = str(text)
 
@@ -106,11 +87,6 @@ class WebTableIndexer:
         Out:
             words: list(str)
         """
-        # TODO: make it configurable (config.py)
-        # MAYBE PUT IT INTO TOKENIZE AND MAKE IT RETURN NONE IF NO WORDS (INSTEAD OF .STRIP())
-        #### Wäre nützlich, wenn das hier ein Framework ist. Da wir aber immer das selbe machen, ist das egal.
-        #### Wenn du es konfigurierbar machen möchtest, dann machst du aus jedem Teilding eine def und rufst sie so auf,
-        #### Wie den Stemmer oben.
         words = text.lower().translate(str.maketrans("", "", string.punctuation))
         processed_words = word_tokenize(words)
         return processed_words
@@ -157,14 +133,6 @@ class WebTableIndexer:
                     ".gz",
                 }:
                     yield from self._iter_file(path)
-
-    # TODO: Somehow batch the calls to the database
-
-    # TODO: Config if None values should be stored
-
-    # TODO: Also add the tokenized header (like db from prof)
-
-    # TODO: Also add something tokenized with tables???
 
     def create_dicts(
         self,
@@ -226,8 +194,6 @@ class WebTableIndexer:
         # TODO: Docstring
 
         # Isn't the actual term also needed and we can easily do the projection in vertica???
-
-        # TODO: Trie Indexing for Fuzzy Matching
 
         projections: dict[str, list[tuple[int, int, int]]] = {}
 

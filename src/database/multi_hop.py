@@ -5,39 +5,53 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 from src.config import MultiHopConfig
+from src.utils.fuzzy_matching import fuzzy_match
 
 
 class DirectDependencyVerifier:
-    def __init__(self, query_factory, multi_config: MultiHopConfig, tau: int) -> None:
+    def __init__(
+        self, query_factory, multi_config: MultiHopConfig, tau: int, seed: int
+    ) -> None:
         self.qf = query_factory
         self.conn = query_factory.conn
         self.config = multi_config
 
         self.tau = tau
+        self.seed = seed
 
-        self.error_threshold = self.config.error_threshold_for_fd
-        self.threshold_for_numeric_cols = self.config.threshold_for_numeric_cols
-        self.large_df_threshold = self.config.large_df_threshold
-        self.none_precision = self.config.none_precision
-        self.metric_precision = self.config.metric_precision
-        self.sample_size = self.config.sample_size
-        self.fd_threshold = self.config.fd_threshold
-        self.strict_uniquness_in_df = self.config.strict_uniquness_in_df
-        self.use_fuzzy_y_match = self.config.use_fuzzy_y_match
-        self.fuzzy_scorer = self.config.fuzzy_scorer
-        self.fuzzy_threshold = self.config.fuzzy_threshold
-        self.max_paths_to_keep = self.config.max_paths_to_keep
-        self.auto_detect_numeric = self.config.auto_detect_numeric
-        self.max_tables = self.config.max_tables
         self.max_path_len = self.config.max_path_len
+        self.max_tables = self.config.max_tables  ###Musst du bei schauen!!!
         self.adaptive_limits = self.config.adaptive_limits
+
+        self.fd_threshold = self.config.fd_threshold
+        self.error_threshold = self.config.error_threshold_for_fd
+        self.use_parallel_fd = self.config.use_parallel_fd
+        self.max_workers = self.config.max_workers_multi
+
+        self.auto_detect_numeric = self.config.auto_detect_numeric
+        self.restrict_nums = self.config.restrict_nums  ###Musst du bei schauen!!
+        self.metric_precision = self.config.metric_precision
+        self.none_precision = self.config.none_precision
+        self.min_word_len = self.config.min_word_len
+        self.strict_uniqueness_in_df = self.config.strict_uniqueness_in_df
+
+        self.use_fuzzy_y_match = self.config.use_fuzzy_y_match
+        self.fuzzy_scorer = self.config.fuzzy_scorer_multi
+        self.fuzzy_threshold = self.config.fuzzy_threshold_multi
+
+        self.large_df_threshold = self.config.large_df_threshold
+        self.sample_size = self.config.sample_size
+        self.max_paths_to_keep = self.config.max_paths_to_keep
+
         self.adaptive_reduction_factor = self.config.adaptive_reduction_factor
+        self.overlap_threshold = self.config.overlap_threshold
+        self.threshold_for_numeric_cols = self.config.threshold_for_numeric_cols
 
         self.print_further_information = self.config.print_further_information
+        self.reset_counters = self.config.reset_counters
 
         self.previously_seen_tables = set()
         self.numeric_cache = dict()
-        # self._string_lower_cache = dict()
         self.survived = defaultdict(int)
 
         pd.set_option("future.no_silent_downcasting", True)
@@ -55,20 +69,6 @@ class DirectDependencyVerifier:
 
         new_table_ids = set(r[0] for r in new_tables)
         self.previously_seen_tables.update(new_table_ids)
-
-    def reset_state(self) -> None:
-        """
-        Resets the previously_seen_tables and survived counter between exercises.
-
-        Args:
-            None
-
-        Returns:
-            None
-        """
-
-        self.previously_seen_tables.clear()
-        self.survived.clear()
 
     def load_table_batch(self, table_ids: list[int]) -> dict[int, pd.DataFrame]:
         """
@@ -222,7 +222,6 @@ class DirectDependencyVerifier:
 
         Args:
             args: tuple
-            error_threshold: float (Default: 0.05)
 
         Returns:
             dict | None
@@ -321,8 +320,8 @@ class DirectDependencyVerifier:
         """
         validated_tables = list()
 
-        if self.config.use_parallel_fd and len(limited_candidates) > 10:
-            with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
+        if self.use_parallel_fd and len(limited_candidates) > 10:
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 fd_args = list()
 
                 for candidate in limited_candidates:
@@ -390,7 +389,7 @@ class DirectDependencyVerifier:
         else:
             flat_y_raw = set(cleaned_y if cleaned_y else [])
 
-        if self.config.use_fuzzy_y_match:
+        if self.use_fuzzy_y_match:
             return flat_y_raw, list(flat_y_raw)
         else:
             return flat_y_raw, None
@@ -518,7 +517,8 @@ class DirectDependencyVerifier:
 
                         if sample_size > 0 and sample_size < n_non_examples:
                             non_example_df = non_example_df.sample(
-                                n=sample_size, random_state=42
+                                n=sample_size,
+                                random_state=self.seed,
                             )
                             # original_size = len(example_df) + n_non_examples
                             merged_df = pd.concat(
@@ -591,11 +591,14 @@ class DirectDependencyVerifier:
                     )
                     overlap = new_values.intersection(existing_values)
 
-                    if self.strict_uniquness_in_df:
+                    if self.strict_uniqueness_in_df:
                         if len(overlap) > 0:
                             continue
                     else:
-                        if len(new_values) > 0 and len(overlap) / len(new_values) > 0.5:
+                        if (
+                            len(new_values) > 0
+                            and len(overlap) / len(new_values) > self.overlap_threshold
+                        ):
                             continue
 
                     new_col_name = f"it{iteration_index}"
@@ -620,8 +623,6 @@ class DirectDependencyVerifier:
                         continue
 
                     elif self.use_fuzzy_y_match and flat_y_list:
-                        from src.utils.fuzzy_matching import fuzzy_match
-
                         fuzzy_matches = 0
                         for found_val in found_values:
                             found_str = str(found_val).strip().lower()
@@ -696,7 +697,7 @@ class DirectDependencyVerifier:
             previously_seen_tables: set | None (Default: None)
 
         Returns:
-            pd.DataFrame | list
+            pd.DataFrame | None
         """
         if not cleaned_x or not all(cleaned_x):
             raise ValueError("cleaned_x must be non-empty")
@@ -717,7 +718,7 @@ class DirectDependencyVerifier:
             if has_numeric_x or has_numeric_y:
                 restrict_nums = False
 
-        flat_y, flat_y_list = self._prepare_flat_y(cleaned_y)
+        flat_y, flat_y_list = self.prepare_flat_y(cleaned_y)
 
         path_len = 1
 
@@ -743,7 +744,7 @@ class DirectDependencyVerifier:
         )
 
         if not multi_z:
-            return list()
+            return None
 
         self.update_seen(multi_z)
 
@@ -828,7 +829,7 @@ class DirectDependencyVerifier:
             if self.print_further_information:
                 print("Found 0 tables")
                 print(f"Survival stats: {dict(self.survived)}")
-            return list()
+            return None
 
         try:
             master_df = pd.concat(final_tables, ignore_index=True)
@@ -850,7 +851,7 @@ class DirectDependencyVerifier:
             if master_df.empty:
                 if self.print_further_information:
                     print("All results filtered out due to NaN cleaning")
-                return list()
+                return None
 
             master_df.reset_index(drop=True, inplace=True)
 
@@ -865,4 +866,4 @@ class DirectDependencyVerifier:
 
         except Exception as e:
             print(f"Error combining results: {e}")
-            return list()
+            return None
