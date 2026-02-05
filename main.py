@@ -28,10 +28,33 @@ def main():
 
         exercises.append([stem, df, k])
 
-    exercises.sort(key=lambda x: len(x[1]), reverse=True)
+    slow_order = [
+        "Country2Area",
+        "CountryCode2Country",
+        "State2Abbreviation",
+        "Ticker2Company",
+        "Company2Ticker",
+        "City2Country",
+        "Country2ThreeLettersISOCode",
+        "Country2TwoLettersISOCode",
+        "Movie2Year",
+        "Country2Adjective",
+        "Airport2Country",
+        "Element2Symbol",
+    ]
 
-    master_config = MasterConfig()
-    full_loop(exercises, config=master_config)
+    order_index = {name: i for i, name in enumerate(slow_order)}
+
+    exercises.sort(key=lambda x: order_index.get(x[0], float("inf")))
+
+    tau_list = [1, 2, 3, 4, 5]
+
+    for tau in tau_list:
+        master_config = MasterConfig()
+        master_config.querying.tau = tau
+        full_loop(
+            exercises, config=master_config, experiment_name=f"tau->{tau}"
+        )
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ class DirectDependencyVerifier:
         self.seed = seed
 
         self.max_path_len = self.config.max_path_len
-        self.max_tables = self.config.max_tables  ###Musst du bei schauen!!!
+        self.max_tables = self.config.max_tables
         self.adaptive_limits = self.config.adaptive_limits
 
         self.fd_threshold = self.config.fd_threshold
@@ -29,7 +29,7 @@ class DirectDependencyVerifier:
         self.max_workers = self.config.max_workers_multi
 
         self.auto_detect_numeric = self.config.auto_detect_numeric
-        self.restrict_nums = self.config.restrict_nums  ###Musst du bei schauen!!
+        self.restrict_nums = self.config.restrict_nums
         self.metric_precision = self.config.metric_precision
         self.none_precision = self.config.none_precision
         self.min_word_len = self.config.min_word_len
@@ -101,9 +101,7 @@ class DirectDependencyVerifier:
 
         return result
 
-    def is_numeric_like(
-        self, val: str
-    ) -> bool:  ###Wird nur noch ein Mal geused. In detect_numeric_columns integrieren?
+    def is_numeric_like(self, val: str) -> bool:
         """
         Checks if a value is numeric in order to limit the search space.
 
@@ -541,11 +539,6 @@ class DirectDependencyVerifier:
                         columns=cols_to_remove, inplace=True, errors="ignore"
                     )
 
-                    # header_keywords = {'id', 'item', 'description', 'value', 'key', 'index', 'header', 'code'}
-                    # if left_join_cols:
-                    #     mask = merged_df[left_join_cols[0]].astype(str).str.lower().isin(header_keywords)
-                    #     merged_df = merged_df[~mask]
-
                     if merged_df.empty:
                         continue
 
@@ -739,7 +732,7 @@ class DirectDependencyVerifier:
             y_cols=None,
             tau=self.tau,
             multi_hop=True,
-            limit=self.max_tables * 3,  # Heuristic, not experimentally validated
+            table_limit=self.max_tables * 3,  # Heuristic, not experimentally validated
             previously_seen_tables=self.previously_seen_tables,
         )
 
@@ -793,7 +786,7 @@ class DirectDependencyVerifier:
                         y_cols=None,
                         tau=self.tau,
                         multi_hop=True,
-                        limit=self.max_tables * 3,
+                        table_limit=self.max_tables * 3,
                         previously_seen_tables=self.previously_seen_tables,
                     )
 
@@ -831,39 +824,40 @@ class DirectDependencyVerifier:
                 print(f"Survival stats: {dict(self.survived)}")
             return None
 
-        try:
-            master_df = pd.concat(final_tables, ignore_index=True)
+        cleaned_results = list()
 
-            x_cols = [c for c in master_df.columns if c.startswith("x_col_")]
-            master_df = master_df.dropna(subset=x_cols, how="all")
+        for df in final_tables:
+            try:
+                x_cols = [c for c in df.columns if c.startswith("x_col_")]
 
-            if "y_col_0" in master_df.columns:
-                master_df = master_df[master_df["y_col_0"].notna()]
-                master_df = master_df[
-                    master_df["y_col_0"].astype(str).str.strip() != ""
-                ]
+                df = df.dropna(subset=x_cols, how="all")
 
-            dedup_cols = (
-                x_cols + ["y_col_0"] if "y_col_0" in master_df.columns else x_cols
-            )
-            master_df.drop_duplicates(subset=dedup_cols, inplace=True)
+                if "y_col_0" in df.columns:
+                    df = df[df["y_col_0"].notna()]
+                    df = df[df["y_col_0"].astype(str).str.strip() != ""]
+                    dedup_cols = x_cols + ["y_col_0"]
+                else:
+                    dedup_cols = x_cols
 
-            if master_df.empty:
-                if self.print_further_information:
-                    print("All results filtered out due to NaN cleaning")
-                return None
+                df.drop_duplicates(subset=dedup_cols, inplace=True)
 
-            master_df.reset_index(drop=True, inplace=True)
+                if df.empty:
+                    continue
 
+                df.reset_index(drop=True, inplace=True)
+                cleaned_results.append(df)
+
+            except Exception as e:
+                print(f"Error cleaning individual table: {e}")
+                continue
+
+        if not cleaned_results:
             if self.print_further_information:
-                print(
-                    f"Found {len(final_tables)} tables, {len(master_df)} rows after cleaning"
-                )
-                print(f"Survival stats: {dict(self.survived)}")
-                print(master_df.to_string(index=False))
-
-            return master_df
-
-        except Exception as e:
-            print(f"Error combining results: {e}")
+                print("All results filtered out due to cleaning")
             return None
+
+        if self.print_further_information:
+            print(f"Found {len(cleaned_results)} distinct tables.")
+            print(f"Survival stats: {dict(self.survived)}")
+
+        return cleaned_results

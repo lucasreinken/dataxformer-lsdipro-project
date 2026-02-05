@@ -98,6 +98,8 @@ class WebTableRanker:
             if None not in col_x and None not in col_y
         }
 
+        n_examples = len(answers)
+
         tables = dict()
 
         q_cols = list({tuple(col) for col in zip(*queries) if None not in col})
@@ -224,7 +226,7 @@ class WebTableRanker:
                         n_tables_streamed = 0
                         n_answers_streamed = 0
                         for (
-                            table_id,
+                            table_infos,
                             answer_list,
                         ) in self.query_engine.find_answers_parallel(
                             executor=ex,
@@ -281,12 +283,19 @@ class WebTableRanker:
                                 answer = canonical_answer
 
                                 tables.setdefault(
-                                    table_id, {"score": 0.0, "answers": set()}
+                                    table_infos[0],
+                                    {
+                                        "score": 0.0,
+                                        "num_rows": table_infos[1],
+                                        "answers": set(),
+                                    },
                                 )
 
-                                answers[answer]["tables"].add(table_id)
-                                tables[table_id]["answers"].add(answer)
-                                tables_by_x.setdefault(answer[0], set()).add(table_id)
+                                answers[answer]["tables"].add(table_infos[0])
+                                tables[table_infos[0]]["answers"].add(answer)
+                                tables_by_x.setdefault(answer[0], set()).add(
+                                    table_infos[0]
+                                )
                                 n_answers_streamed += 1
 
                 if t1:
@@ -345,6 +354,9 @@ class WebTableRanker:
                     debug_timing,
                 )
 
+        if len(answers) == n_examples:
+            return (dict(), dict())
+
         result = {
             x: [
                 (info["term"], info["score"])
@@ -353,7 +365,62 @@ class WebTableRanker:
             ]
             for x in zip(*rearranged_queries)
         }
-        return result
+
+        metrics = dict()
+
+        metrics["n_tables"] = len(tables)
+        metrics["avg_table_size"] = sum(t["num_rows"] for t in tables.values()) / len(
+            tables
+        )
+
+        multi_tables = {tid: t for tid, t in tables.items() if tid < 0}
+
+        n_tables_multi = len(multi_tables)
+        metrics["n_tables_multi"] = n_tables_multi
+        metrics["avg_table_size_multi"] = (
+            sum(t["num_rows"] for t in multi_tables.values()) / n_tables_multi
+            if n_tables_multi
+            else 0
+        )
+
+        winner_table_ids = set()
+
+        for x in zip(*rearranged_queries):
+            infos = result.get(x, [])
+            if not infos:
+                continue
+
+            # result[x] is [(term, score), ...]
+            best_y = max(infos, key=lambda x: x[1])[0]
+
+            if not best_y:
+                continue
+
+            tids = answers[(x, best_y)]["tables"]
+
+            winner_table_ids.update(set(tids))
+
+        sizes = [tables[tid].get("num_rows") for tid in winner_table_ids]
+        sizes = [s for s in sizes if s is not None]
+
+        sizes_multi = [
+            tables[tid].get("num_rows") for tid in winner_table_ids if tid < 0
+        ]
+        sizes_multi = [s for s in sizes_multi if s is not None]
+
+        n_tables_best = len(sizes)
+        metrics["n_tables_best"] = n_tables_best
+        metrics["avg_table_size_best"] = (
+            (sum(sizes) / n_tables_best) if n_tables_best else 0
+        )
+
+        n_tables_best_multi = len(sizes_multi)
+        metrics["n_tables_best_multi"] = n_tables_best_multi
+        metrics["avg_table_size_best_multi"] = (
+            (sum(sizes_multi) / n_tables_best_multi) if n_tables_best_multi else 0
+        )
+
+        return result, metrics
 
     def update_table_scores(
         self,
@@ -416,12 +483,15 @@ class WebTableRanker:
             # unseen_X ← ∑_{x ∉ covered_X, (x,y) ∈ answers} max_y score(x,y)
             unseen_x = total_possible_best_score - table_covered_best_sum
 
+            # score(t) ← α · (prior · good) / (prior · good + (1 − prior) · (bad + unseenX))
             denominator = (self.table_prior * good) + (1 - self.table_prior) * (
                 bad + unseen_x
             )
 
-            # score(t) ← α · (prior · good) / (prior · good + (1 − prior) · (bad + unseenX))
-            table_score = self.alpha * ((self.table_prior * good) / denominator)
+            if denominator == 0:
+                table_score = 0.0
+            else:
+                table_score = self.alpha * ((self.table_prior * good) / denominator)
 
             if print_table_score:
                 print(
@@ -485,16 +555,22 @@ class WebTableRanker:
                         answers[answer]["score"] *= 1 - (tables[table_id]["score"])
 
             denominator = score_of_none + sum(
-                (answers[answer]["score"] for answer in x_answers)
+                answers[answer]["score"] for answer in x_answers
             )
 
-            # for all (x, y) ∈ A do
-            for answer in x_answers:
-                # score(x, y) <- score(x, y) / (score_of_none + Σ_{(x,y) in A} score(x, y))
-                answers[answer]["score"] /= denominator
+            if denominator == 0:
+                for answer in x_answers:
+                    answers[answer]["score"] = 0.0
+
+                prob_none = 0.0
+            else:
+                for answer in x_answers:
+                    answers[answer]["score"] /= denominator
+
+                prob_none = score_of_none / denominator
 
             if print_prob_of_none:
-                print(f"Probability of None for {x_q}: {score_of_none / denominator}")
+                print(f"Probability of None for {x_q}: {prob_none}")
 
         return answers
 
@@ -502,7 +578,6 @@ class WebTableRanker:
         self,
         answers: dict,
         answers_by_x: dict,
-        rearranged_queries: list[list[str]],
         print_winner: bool,
     ) -> dict:
         """

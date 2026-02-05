@@ -32,6 +32,8 @@ class WebTableQueryEngine:
                 self.query_factory, config.multi_hop, self.tau, config.experiment.seed
             )
 
+            self.table_id_counter_for_multi = -1
+
     def find_candidates(
         self,
         x_cols: list[list[str]],
@@ -69,18 +71,27 @@ class WebTableQueryEngine:
         previously_seen_tables=None,
     ):
         if self.use_multi_hop:
-            mh_df = self.fd_verifier.my_queue(
+            mh_tables = self.fd_verifier.my_queue(
                 cleaned_x=x_cols,
                 cleaned_y=y_cols,
                 previously_seen_tables=previously_seen_tables,
-                print_query=self.print_query,
             )
-            if mh_df is not None and not mh_df.empty:
-                x_names = [c for c in mh_df.columns if c.startswith("x_col_")]
-                for _, r in mh_df.iterrows():
-                    x_part = [r[c] for c in x_names]
-                    y_part = [r["y_col_0"]]
-                    yield (-1, [[x_part, y_part]])
+
+            if mh_tables:
+                for df in mh_tables:
+                    x_names = [c for c in df.columns if c.startswith("x_col_")]
+
+                    table_content = list()
+                    for _, r in df.iterrows():
+                        x_part = [r[c] for c in x_names]
+                        y_part = [r["y_col_0"]]
+                        table_content.append([x_part, y_part])
+
+                    num_rows = len(df)
+
+                    yield ((self.table_id_counter_for_multi, num_rows), table_content)
+
+                    self.table_id_counter_for_multi -= 1
 
         idx_list = list(indexes)
         if not idx_list:

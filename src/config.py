@@ -70,9 +70,9 @@ class RankerConfig:
     table_prior: float = 0.5
     topk: int = 1
     parallel_workers = 4
-    max_requery_iterations: int = 2
+    max_requery_iterations: int = 0
     max_requery_answers: int = 50
-    use_fuzzy_matching: bool = True
+    use_fuzzy_matching: bool = False
     use_majority_voting: bool = False
     fuzzy_scorer: str = "max3"
     fuzzy_threshold: float = 0.95
@@ -84,14 +84,14 @@ class RankerConfig:
 @dataclass
 class QueryConfig:
     tau: int = 2
-    table_limit: int = 100
+    table_limit: int = 1000
     use_multi_hop: bool = False
     print_query: bool = False
 
 
 @dataclass
 class ExperimentConfig:
-    project_name: str = "DataXFormerTest"
+    project_name: str = "DataXFormerExperiments"
     entity: str = "DataXFormer"
     repeats: int = 5
     parallel_runs: int = 4

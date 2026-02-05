@@ -37,6 +37,7 @@ def eval_exercise(
     print_evaluation: bool = False,
     print_iterations: bool = False,
     debug_timing: bool = False,
+    seed: int = 2,
 ) -> dict:
     """
     Evaluation loop for one exercise.
@@ -51,6 +52,7 @@ def eval_exercise(
         k: int
         return_time: bool
         print_evaluation: bool (Default: False)
+        seed: int (Default: 2)
 
     Returns:
         metrics: dict
@@ -71,8 +73,9 @@ def eval_exercise(
     all_indices = list(range(len(exercise)))
     list_of_metrics = list()
 
+    rng = random.Random(seed)
     for repetition in range(repeats):
-        example_indices = random.sample(all_indices, count_of_examples)
+        example_indices = rng.sample(all_indices, count_of_examples)
         query_indices = [i for i in all_indices if i not in example_indices]
 
         ex_x = [[col[i] for i in example_indices] for col in x_cleaned_cols]
@@ -90,7 +93,7 @@ def eval_exercise(
         if return_time:
             starttime = endtime = perf_counter()
 
-        results = ranker.expectation_maximization(
+        results, table_metrics = ranker.expectation_maximization(
             ex_x, ex_y, queries, print_iterations, debug_timing
         )
 
@@ -101,29 +104,28 @@ def eval_exercise(
         else:
             run_eval = evaluate_results(results, query_keys, y_true)
 
-        list_of_metrics.append(run_eval)
+        full_eval = run_eval | table_metrics
+        list_of_metrics.append(full_eval)
 
         if print_evaluation:
             print(run_eval)
 
-    metrics = {}
+    metrics = dict()
 
-    answered_mask = [m.get("answered_rate", 0) > 0 for m in list_of_metrics]
-    answered_count = sum(answered_mask)
+    answered_count = sum(m.get("answered_rate", 0) > 0 for m in list_of_metrics)
 
     if answered_count == 0:
         return None
 
     metrics["runs_with_answers"] = answered_count
 
-    for key in list_of_metrics[0].keys():
-        valid_values = [
-            m[key]
-            for m, has_ans in zip(list_of_metrics, answered_mask)
-            if has_ans and m.get(key) is not None
-        ]
-        if valid_values:
-            metrics[key] = np.mean(valid_values)
+    all_keys = set().union(*(m.keys() for m in list_of_metrics))
+
+    for key in all_keys:
+        values = [m.get(key, 0) for m in list_of_metrics]
+
+        metrics[f"{key}_mean"] = float(np.mean(values))
+        metrics[f"{key}_std"] = float(np.std(values))
 
     return metrics
 
@@ -162,6 +164,7 @@ def run_single_exercise(
                 print_evaluation=config.experiment.print_evaluation,
                 print_iterations=config.ranker.print_iterations,
                 debug_timing=config.ranker.debug_timing,
+                seed=config.experiment.seed,
             )
         return name, metrics
     except Exception as e:
@@ -276,6 +279,7 @@ def evaluate_results(
 def full_loop(
     exercises: list,
     config,
+    experiment_name: str | None = None,
 ) -> None:
     """
     Performs the full evaluation loop over all exercises.
@@ -287,14 +291,21 @@ def full_loop(
     Returns:
         None
     """
-    config_list = [config.indexing, config.ranker, config.vertica, config.experiment]
+
+    config_list = [
+        config.indexing,
+        config.ranker,
+        config.vertica,
+        config.querying,
+        config.multi_hop,
+        config.experiment,
+    ]
 
     with LoggingContext(
         configs=config_list,
         project_name=config.experiment.project_name,
         entity=config.experiment.entity,
-        # log_dir=. ###Hier angeben? Sonst konstuiert er eins automatisch.
-        # seed=config.experiment.seed,
+        experiment_name=experiment_name,
     ) as ctx:
         try:
             num_ex = len(exercises)
@@ -313,7 +324,7 @@ def full_loop(
                     name, metrics = future.result()
                     title = name.replace("_", " & ").replace("2", " → ")
 
-                    if metrics is None:
+                    if metrics is None or metrics["runs_with_answers"] == 0.0:
                         info_msg = f"Finished EX {ex_num}/{num_ex} {title}: no answers produced"
                         ctx.info(info_msg)
                         continue

@@ -35,6 +35,8 @@ def worker_validate_and_find_answers(index, ex_x, ex_y, queries, tau, print_quer
     if any(c not in df.columns for c in col_ids):
         return None
 
+    row_count = len(df)
+
     # --------------------------
     # Validation (hashed rows)
     # --------------------------
@@ -70,7 +72,7 @@ def worker_validate_and_find_answers(index, ex_x, ex_y, queries, tau, print_quer
         return table_id, []
 
     # --------------------------
-    # Build answer_list without row-wise apply
+    # Build answer_list
     # --------------------------
     arr = matched.to_numpy()
     x_idx = list(range(len(x_cols)))
@@ -80,4 +82,4 @@ def worker_validate_and_find_answers(index, ex_x, ex_y, queries, tau, print_quer
         [arr[i, x_idx].tolist(), arr[i, y_idx].tolist()] for i in range(arr.shape[0])
     ]
 
-    return table_id, answer_list
+    return ((table_id, row_count), answer_list)

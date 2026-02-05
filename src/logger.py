@@ -156,7 +156,9 @@ def login() -> None:
     wandb.login(key=api_key)
 
 
-def configure(log_dir: Path | str | None = None) -> Path:
+def configure(
+    log_dir: Path | str | None = None, experiment_name: str | None = None
+) -> Path:
     """
     Configures the root logger.
 
@@ -172,10 +174,10 @@ def configure(log_dir: Path | str | None = None) -> Path:
         log_dir = os.getenv("Directory")
 
     if log_dir is None:
-        log_dir = os.path.join(
-            tempfile.gettempdir(),
-            datetime.datetime.now().strftime("DataXFormer-%Y-%m-%d-%H-%M-%S"),
-        )
+        timestamp = datetime.datetime.now().strftime("DataXFormer-%Y-%m-%d-%H-%M-%S")
+        folder_name = f"{experiment_name}-{timestamp}" if experiment_name else timestamp
+
+        log_dir = os.path.join(tempfile.gettempdir(), folder_name)
 
     log_path = Path(log_dir).expanduser().resolve()
     log_path.mkdir(parents=True, exist_ok=True)
@@ -218,6 +220,7 @@ class LoggingContext:
         project_name: str,
         entity: str | None,
         log_dir: Path | str | None = None,
+        experiment_name: str | None = None,
     ) -> None:
         """
         Initializes the logging context.
@@ -243,6 +246,7 @@ class LoggingContext:
         self.run = None
         self.results_data = list()
         self.metrics_buffer = list()
+        self.experiment_name = experiment_name
 
     def info(self, msg: str) -> None:
         """
@@ -317,19 +321,26 @@ class LoggingContext:
             None
         """
 
-        row = [name] + [
-            metrics.get(k, 0)
-            for k in [
-                "precision",
-                "recall",
-                "f1_score",
-                "topk_acc",
-                "topall_acc",
-                "answered_rate",
-            ]
+        keys_to_extract = [
+            "precision_mean",
+            "recall_mean",
+            "f1_score_mean",
+            "top1_acc_mean",
+            "top5_acc_mean",
+            "topall_acc_mean",
+            "answered_rate_mean",
+            "calc_time_mean",
+            "calc_time_std",
+            "n_tables_mean",
+            "n_tables_multi_mean",
+            "avg_table_size_mean",
+            "n_tables_best_mean",
+            "avg_table_size_best_mean",
+            "n_tables_best_multi_mean",
+            "avg_table_size_best_multi_mean",
         ]
-        if "calc_time" in metrics:
-            row.append(metrics["calc_time"])
+
+        row = [name] + [metrics.get(k, 0.0) for k in keys_to_extract]
 
         self.results_data.append(row)
         self.metrics_buffer.append(metrics)
@@ -354,7 +365,7 @@ class LoggingContext:
         user_time = datetime.datetime.now()
         self.start_time = self.end_time = perf_counter()
 
-        log_dir = configure(log_dir=self.dir)
+        log_dir = configure(log_dir=self.dir, experiment_name=self.experiment_name)
 
         device = get_device()
         commit_hash = get_git_commit_hash()
@@ -409,16 +420,23 @@ class LoggingContext:
 
             columns = [
                 "Exercise",
-                "Precision",
-                "Recall",
-                "F1_Score",
-                "TopK_Acc",
+                "Prec_Mean",
+                "Rec_Mean",
+                "F1_Mean",
+                "Top1_Acc",
+                "Top5_Acc",
                 "TopAll_Acc",
-                "Answered",
+                "Answered_Rate",
+                "Time_Mean",
+                "Time_Std",
+                "N_Tabs_Mean",
+                "N_Tabs_Multi",
+                "Avg_Tab_Size",
+                "N_Tabs_Best",
+                "Avg_Tab_Best",
+                "N_Tabs_Best_Multi",
+                "Avg_Tab_Best_Multi",
             ]
-
-            if len(self.results_data) > 0 and len(self.results_data[0]) > 7:
-                columns.append("Calc_Time")
 
             results_table = wandb.Table(columns=columns, data=self.results_data)
             self.log({"Results_Table": results_table})
@@ -426,12 +444,10 @@ class LoggingContext:
             if self.metrics_buffer:
                 keys = self.metrics_buffer[0].keys()
                 summary = dict()
-
                 for k in keys:
                     vals = [m[k] for m in self.metrics_buffer if m.get(k) is not None]
                     if vals:
                         summary[f"final_mean/{k}"] = np.mean(vals)
-
                 self.log(summary)
                 logging.info(f"Final Summary: {summary}")
 
