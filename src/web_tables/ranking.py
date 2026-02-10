@@ -169,16 +169,12 @@ class WebTableRanker:
                         for x in x_to_ys:
                             ys = x_to_ys[x]
 
-                            total = sum(score for _, score in ys)
-                            prob_of_none = max(0.0, 1.0 - total)
-
                             ys_sorted = sorted(ys, key=lambda t: t[1], reverse=True)
                             answer_limit = min(self.topk, len(ys_sorted))
 
                             for idx in range(answer_limit):
                                 y, score = ys_sorted[idx]
-                                if score > prob_of_none:
-                                    requery_pairs.append((x, y))
+                                requery_pairs.append((x, y))
 
                         x_cols = [x_part for x_part, _ in requery_pairs]
                         y_cols = [y_part for _, y_part in requery_pairs]
@@ -309,7 +305,6 @@ class WebTableRanker:
                     answers = self.update_answer_scores_majority(
                         answers=answers,
                         answers_by_x=answers_by_x,
-                        rearranged_queries=rearranged_queries,
                         print_winner=print_iterations,
                     )
 
